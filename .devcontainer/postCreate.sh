@@ -14,10 +14,9 @@ SECRETS_FILE="$PWD/.devcontainer/local.env"
 touch "$SECRETS_FILE"
 echo "Secrets file is $SECRETS_FILE"
 
-
-
 # Define the secret section
-SECRET_SECTION=$(cat <<EOF
+SECRET_SECTION=$(
+  cat <<EOF
 
 # export is required so that when child processes are created # (say a terminal or running coraclcli) they also get 
 # these vars set if you need to add another env var, follow this pattern.  Note that these settings are *ignored*
@@ -39,4 +38,4 @@ if [[ "$CODESPACES" != true ]]; then
   fi
 fi
 
-# add anything that needs to be run when the container is created 
+# add anything that needs to be run when the container is created
