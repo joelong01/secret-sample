@@ -1,0 +1,30 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
+{
+	"name": "Ubuntu",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"image": "mcr.microsoft.com/devcontainers/base:jammy",
+	"customizations": {
+        // Configure properties specific to VS Code.
+        "vscode": {
+            // Set *default* container specific settings.json values on container create.
+			"extensions": [
+				"foxundermoon.shell-format",
+				"timonwong.shellcheck",
+				"bmalehorn.shell-syntax",
+				"rogalmic.bash-debug"
+			]
+        }
+    },
+	"features": {
+		"ghcr.io/devcontainers/features/azure-cli:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {},
+		"ghcr.io/eitsupi/devcontainer-features/jq-likes:1": {},
+		"ghcr.io/lukewiwa/features/shellcheck:0": {}
+	},
+
+
+	"postCreateCommand": "/bin/bash -c 'source ./.devcontainer/on-create.sh'"
+
+
+}
