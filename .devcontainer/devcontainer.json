@@ -24,7 +24,7 @@
 	},
 
 
-	"postCreateCommand": "/bin/bash -i -c 'source .devcontainer/postCreate.sh'"
+	"postCreateCommand": "/bin/bash -i -c 'source ./.devcontainer/postCreate.sh'"
 
 
 }
