@@ -1,23 +1,23 @@
 #!/bin/bash
 
-# this script is run everytime a terminal is started.  it does the following:
-# 1. load the local environment from local.env
-# 2. login to github with the proper scope
-# 3. login to azure, optionally with a service principal
-# 4. setup the secrets
+# This script is run every time a terminal is started. It does the following:
+# 1. Load the local environment from local.env
+# 2. Login to GitHub with the proper scope
+# 3. Login to Azure, optionally with a service principal
+# 4. Setup the secrets
 
 RED=$(tput setaf 1)
 NORMAL=$(tput sgr0)
 GREEN=$(tput setaf 2)
 YELLOW=$(tput setaf 3)
 
-# see https://www.shellcheck.net/wiki/SC2155 for why this is declared this way
+# See https://www.shellcheck.net/wiki/SC2155 for why this is declared this way
 readonly RED
 readonly NORMAL
 readonly GREEN
 readonly YELLOW
 
-# functions to echo information in red/yellow/green
+# Functions to echo information in red/yellow/green
 function echo_error() {
     printf "${RED}%s${NORMAL}\n" "${*}"
 }
@@ -28,13 +28,12 @@ function echo_info() {
     printf "${GREEN}%s${NORMAL}\n" "${*}"
 }
 
-# as this scenario is to be able to have an application that logs into GitHub, GitLab, and the AzureCLI in both
-# local docker containers and in CodeSpaces.
-# there are 3 scenarios for working in this repo, all with slightly different ways of dealing with secrets and azure
-# 1. use a local docker container.  there secrets are stored in local-secrets.env
-# 2. using the desktop version of VS Code running against a code space instance.  Here secrets are stored in GitHub
-# 3. use the browser version of VS Code running against a code space instance.
-#
+# As this scenario is to be able to have an application that logs into GitHub, GitLab, and the AzureCLI in both
+# local docker containers and in CodeSpaces. There are 3 scenarios for working in this repo, all with slightly
+# different ways of dealing with secrets and azure:
+# 1. Use a local docker container. There secrets are stored in local-secrets.env
+# 2. Using the desktop version of VS Code running against a code space instance. Here secrets are stored in GitHub
+# 3. Use the browser version of VS Code running against a code space instance.
 function login_to_azure() {
     # Set up variables
     local az_info
@@ -96,7 +95,7 @@ function load_local_env() {
 # side effects of this function:  USE_GITLABS and GITLAB_TOKEN are set
 function get_gitlab_token() {
     if [[ -f "$STARTUP_OPTIONS_FILE" ]]; then
-        USE_GITLAB=$(jq -r '.useGitlab' < "$STARTUP_OPTIONS_FILE")
+        USE_GITLAB=$(jq -r '.useGitlab' <"$STARTUP_OPTIONS_FILE")
     else
         USE_GITLAB=true
     fi
@@ -111,10 +110,10 @@ function get_gitlab_token() {
     # this regular expression checks for upper or lower case Y
     if [[ "$use_gitlab" =~ ^[Yy]$ ]]; then
         USE_GITLAB=true
-        echo '{"useGitlab": true}' | jq > "$STARTUP_OPTIONS_FILE"
+        echo '{"useGitlab": true}' | jq >"$STARTUP_OPTIONS_FILE"
     else
         USE_GITLAB=false
-        echo '{"useGitlab": false}' | jq > "$STARTUP_OPTIONS_FILE"
+        echo '{"useGitlab": false}' | jq >"$STARTUP_OPTIONS_FILE"
         return 1
     fi
 
@@ -124,13 +123,12 @@ function get_gitlab_token() {
     export GITLAB_TOKEN
 }
 
-
-# secret initialization - in this scenario, the only secret that the dev has to deal with is the GITLAB_TOKEN.  if other
-# secrets are needed, then this is where we would deal with them. we can either be in codespaces or running on a docker
-# container on someone's desktop.  if we are in codespaces e can store per-dev secrets in GitHub and not have to worry about
-# storing them locally.  Codespaces will set an environment variable CODESPACES=true if it is in codespaces.  Even if we are 
-# not in Codespaces, we still set he user secret in Github so that if codespaces is used, it will be there.
-# the pattern is
+# secret initialization - in this scenario, the only secret that the dev has to deal with is the GITLAB_TOKEN.  if 
+# other secrets are needed, then this is where we would deal with them. we can either be in codespaces or running on a 
+# docker container on someone's desktop.  if we are in codespaces e can store per-dev secrets in GitHub and not have to
+# worry aboutstoring them locally.  Codespaces will set an environment variable CODESPACES=true if it is in codespaces.
+# Even if we are not in Codespaces, we still set he user secret in Github so that if codespaces is used, it will be 
+# there. The pattern is
 # 1. if the secret is set, return
 # 2. get the value and then set it as a user secret for the current repo
 # 3. if it is not running in codespaces, get the value and put it in the $LOCAL_SECRETS file
@@ -184,7 +182,7 @@ function login_to_github() {
 
     # if we don't have the scopes we need, we must update them
     if [[ -z $SECRET_COUNT ]] && [[ $USER_LOGGED_IN == true ]]; then
-        echo_warning "You are not logged in with permissions to check user secrets.  Adding them by refreshing the token"
+        echo_warning "Refreshing GitHub Token to request codespace:secrets scope"
         gh auth refresh --scopes user,repo,codespace:secrets
     fi
 

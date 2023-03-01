@@ -1,12 +1,13 @@
 #shellcheck disable=SC2148
 #shellcheck disable=SC2181
 
-# we need the repo below -- this repo will be updated by the startup.sh file to contain the repo that startup.sh is running in
+# we need the repo below -- this repo will be updated by the startup.sh 
+# file to contain the repo that startup.sh is running in
 GITHUB_REPO=retaildevcrews/coral-cli-go
-# Instructions:  Copy and paste this function (starting with the "function create_azure_service_principal() {" line all the way
-# to the end of the file) into Azure Cloud Shell (or any interactive unix terminal where you can login to azure) and then call the
-# function by running "create_azure_service_principal" (no quotes).  Then enter the information from the output of the function
-# to the prompt from startup.sh for the coralcli project
+# Instructions:  Copy and paste this function (starting with the "function create_azure_service_principal() {" line all
+# the way to the end of the file) into Azure Cloud Shell (or any interactive unix terminal where you can login to azure)
+# and then call the function by running "create_azure_service_principal" (no quotes).  Then enter the information from 
+# the output of the function to the prompt from startup.sh for the coralcli project
 function create_azure_service_principal() {
 
     # make sure the user is logged into Azure
@@ -54,7 +55,8 @@ function create_azure_service_principal() {
     fi
 
     if [[ -z $app_id || -z $password || -z $tenant_id ]]; then
-        echo "There was a problem generating the service principal and one of the critical pieces of information came back null."
+        echo "There was a problem generating the service principal"
+        echo "One of the critical pieces of information came back null."
         echo "Fix this issue and try again."
         # Print the app ID and password
         echo "Service Principal:"
