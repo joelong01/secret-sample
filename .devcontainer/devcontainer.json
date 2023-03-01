@@ -12,7 +12,9 @@
 				"foxundermoon.shell-format",
 				"timonwong.shellcheck",
 				"bmalehorn.shell-syntax",
-				"rogalmic.bash-debug"
+				"rogalmic.bash-debug",
+				"shd101wyy.markdown-preview-enhanced",
+				"yzhang.markdown-all-in-one"
 			]
         }
     },
