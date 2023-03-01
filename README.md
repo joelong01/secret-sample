@@ -117,10 +117,11 @@ fi
 SECRET_SECTION=$(
   cat <<EOF
 
-# export is required so that when child processes are created # (say a terminal or running coraclcli) 
-# they also get these vars set if you need to add another env var, follow this pattern.  Note that 
-# these settings are *ignored* when running in Codespaces as the values are kept in Codespaces User 
-# Secrets
+# Export is required so that child processes (such as a terminal or coraclcli) also have access to 
+# these environment variables. Use "export" to set them. To add another variable, follow the same 
+# pattern. These settings are ignored in Codespaces as values are kept in User Secrets.
+
+
 
 GITLAB_TOKEN=
 export GITLAB_TOKEN
