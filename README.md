@@ -403,7 +403,7 @@ function create_azure_service_principal() {
     gh auth login --scopes user,repo,codespace:secrets
 
 ```
->Prompt the user for the name for the service principal, the subscription and the tenant id.  To make it easier for the user, print out a table of all subscriptions they have access to, along with the associated tenant id.
+>Prompt the user for the name for the service principal, the subscription and the tenant id.  To make it easier for the user, print out a table of all subscriptions they have access to, along with the associated names and ids.
 ```sh
     echo -n "Name of the service principal: "
     read -r -p "" sp_name
