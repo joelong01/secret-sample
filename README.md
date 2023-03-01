@@ -46,7 +46,7 @@ In this project, there are three different logins required from the dev containe
 │   └── startup.sh  
 ├── .gitignore  
 
-Here is a description of each file:
+File Descriptions:
 
 1. **.devcontainer**:  this is a folder that defines the container that the application will run in.
 2. **create-azure-service-principal.sh**: this is a self contained script that will guide the user to enter the data necessary to create an Azure Service Principal.  The generated Service Principal information (name, secret, and tenantId) will be stored as User Secrets in Codespaces
@@ -55,9 +55,9 @@ Here is a description of each file:
 4. **local.env**:  a file that *is not checked in* that contains environment variables (including secrets) that the developer needs to build and run the application.  this file is created by the **postCreate.sh** script.
 5. **.localStartupOptions.json**: a file that *is not checked in* that contains config used by the local-secrets scripts such as remembering options the user has selected.  It is created by **startup.sh**.
 7. **postCreate.sh**: the "handler" for the 'postCreateCommand". Its main job is to update the **.bashrc** so that **startup.sh** is run every time a terminal is started.  It is also a convenient place to "bootstrap" the system by creating files and adding information to them.  For example, this sample will create the **local.env** file and then add environment variables for the Gitlab PAT (GITLAB_TOKEN) and the location of the **local.env** file
-8. **.gitignore**:  git infrastructure file used to ignore files so they won't be checked into the repo.  To ensure that **local.env** is not checked in, the line ```*local*.*``` is added to the .gitignore, making it so that anything that has the string "local" in it won't be checked in.
-
-##Implementation
+8. **.gitignore**:  git infrastructure file used to ignore files so they won't be checked into the repo.  To ensure that **local.env** is not checked in, the line ```*local*.*``` is added to the .gitignore, making it so that anything that has the string "local" in it won't be checked in.  
+  
+## Implementation
 
 To initialize the process for each of the logins, code needs to be executed when a terminal is started. This code will verify the presence of valid secrets, check if authentication has already occurred, and prompt the developer for any necessary actions. The most straightforward approach is to run the code in the **.bashrc** startup script. To ensure maintainability, a **startup.sh** script is included in the project and added to **.bashrc**, which will be executed every time a new terminal is created. The code is added to the .**bashrc** by running a script specified in the **devcontainer.json**.
 ```json
@@ -76,7 +76,7 @@ When creating the dev container, the following code is run using the *postCreate
 This simply tells VS Code to run the bash script call **postCreate.sh**
 
 The [postCreate.sh](.devcontainer/postCreate.sh) script looks like this, divided up as section for easier explanation:
-```shell
+```sh
 #!/bin/bash
 
 # Define the startup line to be added to the .bashrc
@@ -91,7 +91,7 @@ fi
 
 > This section checks to see if the line already exists in the *.bashrc* file and if so, replaces it with the proper line. If it is not there it adds it.  
 
-```shell
+```sh
 LOCAL_ENV="$PWD/.devcontainer/local.env"
 # create the secrets file if necessary
 if [[ ! -f $LOCAL_ENV ]]; then
@@ -111,7 +111,7 @@ fi
 ```
 >This section of the file creates the *local.env* file if it doesn't exist and then looks for the line ```LOCAL_ENV=``` and adds it if it isn't there or replaces it if it is.  The sed command of "replace the whole line if it starts with these characters" is a generally useful pattern to follow. 
 
-```shell
+```sh
 # Define the secret section - if there are more secrets, add them here and follow the pattern for getting the values
 # from the dev that is shown in startup.sh
 SECRET_SECTION=$(
@@ -149,15 +149,16 @@ fi
 > 3. login to azure, optionally with a service principal
 > 4. setup the secrets
 
-##startup.sh
+## startup.sh
 Next, we will go through the startup.sh script and explain what each part of it does.  the format is in 
 > *function ()*:
 > Description
-```shell
+```sh
     # shell code
 ```
 >This script starts off just defining some functions for echoing text to the console in various colors.  These are used to make the interactions easier to understand.
-```shell
+
+```sh
 #!/bin/bash
 
 RED=$(tput setaf 1)
@@ -182,16 +183,15 @@ function echo_info() {
     printf "${GREEN}%s${NORMAL}\n" "${*}"
 }
 ```
-*function login_to_azure()*:
-
-> As this scenario is to be able to have an application that logs into GitHub, GitLab, and the AzureCLI in both local docker containers and in CodeSpaces. there are 3 scenarios for working in this repo, all with slightly different ways of dealing with secrets and azure
+>*function login_to_azure()*:  
+As this scenario is to be able to have an application that logs into GitHub, GitLab, and the AzureCLI in both local docker containers and in CodeSpaces. there are 3 scenarios for working in this repo, all with slightly different ways of dealing with secrets and azure
 > 1. use a local docker container.  there secrets are stored in local-secrets.env
 > 2. using the desktop version of VS Code running against a code space instance. Secrets are stored in GitHub Codespaces User Secrets
 > 3. use the browser version of VS Code running against a code space instance. Secrets are stored in GitHub Codespaces User Secrets
 >
 > One of the problems using the AZ CLI in Codespaces is that the call to login via "az login" simply hangs during the redirect to localhost.  If the login is via "az login --user-device-code" it will appear to work, but the user is not actually logged in. The strategy here is to check to see if the environment variables for the Service Principal are set, and if so, ask the user if they want to use them to login to Azure.  If not, issue an "az login" command.  One of the downsides of using a Service Principal is that the permissions of a SP are often less than the permissions that are granted to a SP by default -- and granting more permissions often requires an AAD admin to approve.  This is can be very hard, depending on the policies of the company.  Sometimes, this might force a scenario where a Service Principal cannot be supported.  Since the secrets in Codespaces are key/value pairs the names of the secrets (e.g. AZ_SP_APP_ID) are used across all repos.  If the dev scenarios require a separate secret for a particular project, the script should be updated to look for additional or different secret names.
 > 
-```shell
+```sh
 function login_to_azure() {
     # Set up variables
     local az_info
@@ -229,10 +229,11 @@ function login_to_azure() {
     return 0
 }
 ```
-> *load_local_env()*
+> *load_local_env()*  
+
 > This function loads the local secrets and lets the user know where those secrets are stored.  Echoing the location is a key part of the scenario as it "guides" the developer to the right spot if they need to update or add additional environment variables.  The shellcheck comment below is a way of turning off a shell linter warning that it can't follow the link to check the referenced file.  As we check it separately, it isn't needed here.  the LOCAL_ENV environment variable is set in the local.env file by the *postCreate.sh*
 > Note that the line ```"source "$PWD/.devcontainer/local.env"``` is not ```source $LOCAL_ENV``` because \$LOCAL_ENV is set by executing this line...so $LOCAL_ENV is "" until after this line.
-```shell
+```sh
 function load_local_env() {
     # the following line disables the "follow the link linting", which we don't need here
 
@@ -247,10 +248,10 @@ function load_local_env() {
 
 }
 ```
-> *function get_gitlab_token()*:
->  Ask the user if they want to use GitLab, and if so ask for the Gitlab token and export it as GITLAB_TOKEN.  Remember their decision in the $STARTUP_OPTIONS_FILE.  This function will set the USE_GITLABS and GITLAB_TOKEN environment variables. 
-```shell
-get_gitlab_token() {
+> *function get_gitlab_token():  
+Ask the user if they want to use GitLab, and if so ask for the Gitlab token and export it as GITLAB_TOKEN.  Remember their decision in the $STARTUP_OPTIONS_FILE.  This function will set the USE_GITLABS and GITLAB_TOKEN environment variables. 
+```sh
+function get_gitlab_token() {
     if [[ -f "$STARTUP_OPTIONS_FILE" ]]; then
         USE_GITLAB=$(jq -r '.useGitlab' < "$STARTUP_OPTIONS_FILE")
     else
@@ -280,7 +281,8 @@ get_gitlab_token() {
     export GITLAB_TOKEN
 }
 ```
-> *function setup_secrets()* 
+> *function setup_secrets()*   
+
 > Loads the local secrets and lets the user know where those secrets are stored. In this scenario, the only secret that the dev has to deal with is the GITLAB_TOKEN. If other secrets are needed, then this is where they would deal with them. 
 > 
 > We can either be in codespaces or running on a docker container on someone's desktop.  if we are in codespaces we can store per-dev secrets in GitHub and not have to worry about storing them locally.  Codespaces will set an environment variable CODESPACES=true if it is in codespaces.  Even if we are not in Codespaces, we still set he user secret in GitHub so that if codespaces is used, it will be there. the pattern is
@@ -288,7 +290,7 @@ get_gitlab_token() {
 > 2. get the value and then set it as a user secret for the current repo
 > 3. if it is not running in codespaces, get the value and put it in the $LOCAL_SECRETS file
    
-```shell
+```sh
 function setup_secrets() {
 
     # if the GITLAB_TOKEN variable is set, then we don't need to do anything
@@ -316,10 +318,11 @@ function setup_secrets() {
     return 0
 }
 ```
-> *function login_to_github()*:
+> *function login_to_github()*  
+
 Checks to see if the user is logged into GitHub and if not logs them in.
 In order to use GitHub's Codespaces secrets (```gh secret set```), the token needs to have```codespace:secrets``` scope set.  To test permissions, get the count of secrets and if this fails, re-auth the token with the proper permissions.  Here we login with the permissions to use the user, repo, and codespaces secrets. 
-```shell
+```sh
 function login_to_github() {
 
     export GH_AUTH_STATUS
@@ -337,7 +340,8 @@ function login_to_github() {
     fi
 
     # find the number of secrets to test if we have the write scopes for our github login
-    SECRET_COUNT=$(gh api -H "Accept: application/vnd.github+json" /user/codespaces/secrets | jq -r .total_count)
+    SECRET_COUNT=$(gh api -H "Accept: application/vnd.github+json" 
+                    /user/codespaces/secrets | jq -r .total_count)
 
     # if we don't have the scopes we need, we must update them
     if [[ -z $SECRET_COUNT ]] && [[ $USER_LOGGED_IN == true ]]; then
@@ -368,7 +372,7 @@ function login_to_github() {
 }
 ```
 This part of the script just calls the functions in the proper order.  Call load_local_env fist because in Codespaces, the shell starts with the secrets set so this makes the initial conditions of the script the same if the dev is running in Codespaces or in a local docker container
-```shell
+```sh
 load_local_env
 login_to_github
 login_to_azure
@@ -396,7 +400,7 @@ This section includes some alternatives that were tried but did not meet the des
 **A simple .env file with an example in the repository and described in the README.**
 
 This approach is often used in repositories, and it works for a small team that is aware of how the project is setup and the steps to take in creating their inner loop environment.
-```shell
+```sh
 #!/bin/bash
 
 GITHUB_TOKEN=gho_70iyx\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*Paha
