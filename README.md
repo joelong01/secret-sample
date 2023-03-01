@@ -397,13 +397,13 @@ function create_azure_service_principal() {
         exit 1
     fi
 ```
-Since we are storing user secrets in GitHub, we must log into GitHub with the proper scope.
+>Since we are storing user secrets in GitHub, we must log into GitHub with the proper scope.
 ```sh
     echo "You must login to GitHub in order to create GitHub Codespace secrets"
     gh auth login --scopes user,repo,codespace:secrets
 
 ```
-Prompt the user for the name for the service principal, the subscription and the tenant id.  To make it easier for the user, print out a table of all subscriptions they have access to, along with the associated tenant id.
+>Prompt the user for the name for the service principal, the subscription and the tenant id.  To make it easier for the user, print out a table of all subscriptions they have access to, along with the associated tenant id.
 ```sh
     echo -n "Name of the service principal: "
     read -r -p "" sp_name
@@ -417,7 +417,7 @@ Prompt the user for the name for the service principal, the subscription and the
     tenant_id=$(az account show --subscription "${subscription_id}" --query "tenantId" --output tsv)
     echo "Creating service Principal.  Name=$sp_name  Subscription=$subscription_id"
 ```
-    Create the service principle and get the output we care about in json format
+>Create the service principle and get the output we care about in json format
 ```sh
     # Create a service principal and get the output as JSON - we do not redirect stderr
     # to stdout to make parsing easier
@@ -450,7 +450,7 @@ Prompt the user for the name for the service principal, the subscription and the
         return 1
     fi
 ```
-> If we get here, we have the information we need, store the secrets as user secrets for the repository that is set at the top of the file.
+>If we get here, we have the information we need, store the secrets as user secrets for the repository that is set at the top of the file.
 ```sh
     # we have non empty values -- store them in GH user secrets
     gh secret set AZ_SP_APP_ID --user --repos "$GITHUB_REPO" --body "$app_id"
