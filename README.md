@@ -156,7 +156,7 @@ Next, we will go through the startup.sh script and explain what each part of it 
 ```sh
     # shell code
 ```
->This script starts off just defining some functions for echoing text to the console in various colors.  These are used to make the interactions easier to understand.
+>This script starts off defining some functions for echoing text to the console in various colors.  These are used to make the interactions easier to understand.
 
 ```sh
 #!/bin/bash
@@ -183,7 +183,7 @@ function echo_info() {
     printf "${GREEN}%s${NORMAL}\n" "${*}"
 }
 ```
->*function login_to_azure()*:  
+>*function login_to_azure()*  
 As this scenario is to be able to have an application that logs into GitHub, GitLab, and the AzureCLI in both local docker containers and in CodeSpaces. there are 3 scenarios for working in this repo, all with slightly different ways of dealing with secrets and azure
 > 1. use a local docker container.  there secrets are stored in local-secrets.env
 > 2. using the desktop version of VS Code running against a code space instance. Secrets are stored in GitHub Codespaces User Secrets
@@ -230,8 +230,7 @@ function login_to_azure() {
 }
 ```
 > *load_local_env()*  
-
-> This function loads the local secrets and lets the user know where those secrets are stored.  Echoing the location is a key part of the scenario as it "guides" the developer to the right spot if they need to update or add additional environment variables.  The shellcheck comment below is a way of turning off a shell linter warning that it can't follow the link to check the referenced file.  As we check it separately, it isn't needed here.  the LOCAL_ENV environment variable is set in the local.env file by the *postCreate.sh*
+This function loads the local secrets and lets the user know where those secrets are stored.  Echoing the location is a key part of the scenario as it "guides" the developer to the right spot if they need to update or add additional environment variables.  The shellcheck comment below is a way of turning off a shell linter warning that it can't follow the link to check the referenced file.  As we check it separately, it isn't needed here.  the LOCAL_ENV environment variable is set in the local.env file by the *postCreate.sh*
 > Note that the line ```"source "$PWD/.devcontainer/local.env"``` is not ```source $LOCAL_ENV``` because \$LOCAL_ENV is set by executing this line...so $LOCAL_ENV is "" until after this line.
 ```sh
 function load_local_env() {
@@ -282,10 +281,7 @@ function get_gitlab_token() {
 }
 ```
 > *function setup_secrets()*   
-
-> Loads the local secrets and lets the user know where those secrets are stored. In this scenario, the only secret that the dev has to deal with is the GITLAB_TOKEN. If other secrets are needed, then this is where they would deal with them. 
-> 
-> We can either be in codespaces or running on a docker container on someone's desktop.  if we are in codespaces we can store per-dev secrets in GitHub and not have to worry about storing them locally.  Codespaces will set an environment variable CODESPACES=true if it is in codespaces.  Even if we are not in Codespaces, we still set he user secret in GitHub so that if codespaces is used, it will be there. the pattern is
+> Loads the local secrets and lets the user know where those secrets are stored. In this scenario, the only secret that the dev has to deal with is the GITLAB_TOKEN. If other secrets are needed, then this is where they would deal with them.  We can either be in codespaces or running on a docker container on someone's desktop.  If we are in codespaces we can store per-dev secrets in GitHub and not have to worry about storing them locally.  Codespaces will set an environment variable CODESPACES=true if it is in codespaces.  Even if we are not in Codespaces, we still set he user secret in GitHub so that if codespaces is used, it will be there. the pattern is
 > 1. if the secret is set, return
 > 2. get the value and then set it as a user secret for the current repo
 > 3. if it is not running in codespaces, get the value and put it in the $LOCAL_SECRETS file
@@ -319,7 +315,6 @@ function setup_secrets() {
 }
 ```
 > *function login_to_github()*  
-
 Checks to see if the user is logged into GitHub and if not logs them in.
 In order to use GitHub's Codespaces secrets (```gh secret set```), the token needs to have```codespace:secrets``` scope set.  To test permissions, get the count of secrets and if this fails, re-auth the token with the proper permissions.  Here we login with the permissions to use the user, repo, and codespaces secrets. 
 ```sh
@@ -371,7 +366,7 @@ function login_to_github() {
     fi
 }
 ```
-This part of the script just calls the functions in the proper order.  Call load_local_env fist because in Codespaces, the shell starts with the secrets set so this makes the initial conditions of the script the same if the dev is running in Codespaces or in a local docker container
+>This part of the script just calls the functions in the proper order.  Call load_local_env fist because in Codespaces, the shell starts with the secrets set so this makes the initial conditions of the script the same if the dev is running in Codespaces or in a local docker container
 ```sh
 load_local_env
 login_to_github
