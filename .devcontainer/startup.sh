@@ -1,8 +1,16 @@
 #!/bin/bash
+
+# this script is run everytime a terminal is started.  it does the following:
+# 1. load the local environment from local.env
+# 2. login to github with the proper scope
+# 3. login to azure, optionally with a service principal
+# 4. setup the secrets
+
 RED=$(tput setaf 1)
 NORMAL=$(tput sgr0)
 GREEN=$(tput setaf 2)
 YELLOW=$(tput setaf 3)
+
 # see https://www.shellcheck.net/wiki/SC2155 for why this is declared this way
 readonly RED
 readonly NORMAL
@@ -20,25 +28,13 @@ function echo_info() {
     printf "${GREEN}%s${NORMAL}\n" "${*}"
 }
 
-# a this is a config file in json format where we use jq to find/store settings
-STARTUP_OPTIONS_FILE="$PWD/.devcontainer/.localStartupOptions.json"
-
-# tell the dev where the options are everytime a terminal starts so that it is obvious where to change a setting
-echo_info "Startup options set in $STARTUP_OPTIONS_FILE"
-
-# make this env var available in the calling environment
-export SECRETS_FILE
-SECRETS_FILE=$PWD/.devcontainer/local-secrets.env
-echo_info "Local secrets file is $SECRETS_FILE.  Set environement variables there that you want to use locally."
 # as this scenario is to be able to have an application that logs into GitHub, GitLab, and the AzureCLI in both
 # local docker containers and in CodeSpaces.
 # there are 3 scenarios for working in this repo, all with slightly different ways of dealing with secrets and azure
-# 1. use a local docker container.  there secrets are stored in local-secrets.env 
+# 1. use a local docker container.  there secrets are stored in local-secrets.env
 # 2. using the desktop version of VS Code running against a code space instance.  Here secrets are stored in GitHub
-# 3. use the browser version of VS Code running against a code space instance.  
+# 3. use the browser version of VS Code running against a code space instance.
 #
-
-
 function login_to_azure() {
     # Set up variables
     local az_info
@@ -82,49 +78,58 @@ function login_to_azure() {
 
 # simply loads the local secret file to source the environment variables.  this
 # file is created in on-create.sh should always be here
-function load_local_secrets_file() {
+function load_local_env() {
     # the following line disables the "follow the link linting", which we don't need here
+
     # shellcheck source=/dev/null
-    source "$SECRETS_FILE"
+    source "$PWD/.devcontainer/local.env"
+    # a this is a config file in json format where we use jq to find/store settings
+    STARTUP_OPTIONS_FILE="$PWD/.devcontainer/.localStartupOptions.json"
+
+    # tell the dev where the options are everytime a terminal starts so that it is obvious where to change a setting
+    echo_info "Local secrets file is $LOCAL_ENV.  Set environement variables there that you want to use locally."
+
 }
 
 # ask the user if they want to use GitLab, and if so ask for the  Gitlab token and export it
 # as GITLAB_TOKEN.  Remember their decision in the $STARTUP_OPTIONS_FILE
 # side effects of this function:  USE_GITLABS and GITLAB_TOKEN are set
 function get_gitlab_token() {
-    USE_GITLAB=true
-
-    if [[ -f $STARTUP_OPTIONS_FILE ]]; then
-        USE_GITLAB=$(jq .useGitlab -r <"$STARTUP_OPTIONS_FILE")
+    if [[ -f "$STARTUP_OPTIONS_FILE" ]]; then
+        USE_GITLAB=$(jq -r '.useGitlab' < "$STARTUP_OPTIONS_FILE")
+    else
+        USE_GITLAB=true
     fi
 
-    # ech this text so that the dev working on this code knows to go to this file to change the setting
-    if [[ $USE_GITLAB == false ]]; then
+    # Print this message so developers can modify the setting
+    if ! "$USE_GITLAB"; then
         echo_info "useGitlab set to false in $STARTUP_OPTIONS_FILE."
         return 1
     fi
 
-    read -r -p "Would you like to use Gitlab? [yN]" USE_GITLAB
-    if [[ $USE_GITLAB == "y" || $USE_GITLAB == "Y" ]]; then
+    read -r -p "Would you like to use Gitlab? [y/N] " use_gitlab
+    # this regular expression checks for upper or lower case Y
+    if [[ "$use_gitlab" =~ ^[Yy]$ ]]; then
         USE_GITLAB=true
-        echo '{"useGitlab": true}' | jq >"$STARTUP_OPTIONS_FILE"
+        echo '{"useGitlab": true}' | jq > "$STARTUP_OPTIONS_FILE"
     else
         USE_GITLAB=false
-        echo '{"useGitlab": false}' | jq >"$STARTUP_OPTIONS_FILE"
+        echo '{"useGitlab": false}' | jq > "$STARTUP_OPTIONS_FILE"
         return 1
     fi
-    read -r -p "what is the value for GITLAB_TOKEN? " input
-    export GITLAB_TOKEN=$input
-    return 0
+
+    read -r -p "What is the value for GITLAB_TOKEN? " gitlab_token
+    GITLAB_TOKEN="$gitlab_token"
+    export USE_GITLAB
+    export GITLAB_TOKEN
 }
 
-# secret initialization - right now the only secret that the dev has to deal with is the GITLAB_TOKEN.  if other
-# secrets are needed, then this is where we would deal with them.
-# we can either be in codespaces or running on a docker container on someone's desktop.  if we are in codespaces
-# we can store per-dev secrets in GitHub and not have to worry about storing them locally.  Codespaces will set
-# an environment variable CODESPACES=true if it is in codespaces.  Even if we are not in Codespaces, we still set
-# set the user secret in Github so that if codespaces is used, it will be there.
-#
+
+# secret initialization - in this scenario, the only secret that the dev has to deal with is the GITLAB_TOKEN.  if other
+# secrets are needed, then this is where we would deal with them. we can either be in codespaces or running on a docker
+# container on someone's desktop.  if we are in codespaces e can store per-dev secrets in GitHub and not have to worry about
+# storing them locally.  Codespaces will set an environment variable CODESPACES=true if it is in codespaces.  Even if we are 
+# not in Codespaces, we still set he user secret in Github so that if codespaces is used, it will be there.
 # the pattern is
 # 1. if the secret is set, return
 # 2. get the value and then set it as a user secret for the current repo
@@ -143,13 +148,14 @@ function setup_secrets() {
         return 0
     fi
 
-    # we always store the secret as a user secret in GitLab
+    # we always store the secret as a user secret in GitLab -
+    # if there are more secrets, follow this pattern to store them in github codespaces secrets
     repo=$(gh repo view --json nameWithOwner | jq .nameWithOwner -r)
     gh secret set GITLAB_TOKEN --user --repos "$repo" --body "$GITLAB_TOKEN"
 
     # if you are not in Codespaces, update the GITLAB_TOEKN= line in the secrets file to set the GitLab PAT
     if [[ -z $CODESPACES ]]; then
-        sed -i "s/GITLAB_TOKEN=/GITLAB_TOKEN=$GITLAB_TOKEN/" "$SECRETS_FILE"
+        sed -i "s/GITLAB_TOKEN=/GITLAB_TOKEN=$GITLAB_TOKEN/" "$LOCAL_ENV"
     fi
     return 0
 }
@@ -202,9 +208,9 @@ function login_to_github() {
         echo_info "$GITHUB_INFO"
     fi
 }
-# call load_local_secrets_file fist because in Codespaces, the shell starts with the secrets set so this makes the
+# call load_local_env fist because in Codespaces, the shell starts with the secrets set so this makes the
 # initial conditions of the script the same if the dev is running in codespace or in a local docker container
-load_local_secrets_file
+load_local_env
 login_to_github
 login_to_azure
 setup_secrets
