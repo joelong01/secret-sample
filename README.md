@@ -419,7 +419,8 @@ Prompt the user for the name for the service principal, the subscription and the
 ```
     Create the service principle and get the output we care about in json format
 ```sh
-    # Create a service principal and get the output as JSON - we do not redirect stderr to stdout to make parsing easier
+    # Create a service principal and get the output as JSON - we do not redirect stderr
+    # to stdout to make parsing easier
     output=$(az ad sp create-for-rbac --name "$sp_name" --role contributor \
         --scopes "/subscriptions/$subscription_id" \
         --query "{ appId: appId, password: password }" --output json)
