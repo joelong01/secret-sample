@@ -80,23 +80,16 @@ function create_azure_service_principal() {
         return 1
     fi
     # we have non empty values -- store them in GH user secrets
-    gh secret set CORAL_CLI_AZ_SP_APP_ID --user --repos "$GITHUB_REPO" --body "$app_id"
-    gh secret set CORAL_CLI_AZ_SP_PASSWORD --user --repos "$GITHUB_REPO" --body "$password"
-    gh secret set CORAL_CLI_TENANT_ID --user --repos "$GITHUB_REPO" --body "$tenant_id"
+    gh secret set AZ_SP_APP_ID --user --repos "$GITHUB_REPO" --body "$app_id"
+    gh secret set AZ_SP_PASSWORD --user --repos "$GITHUB_REPO" --body "$password"
+    gh secret set AZ_SP_TENANT_ID --user --repos "$GITHUB_REPO" --body "$tenant_id"
 
     echo "Go back to VS Code.  You should have a toast popup that says \"Your Codespace secrets have changed.\""
     echo "Click on \"Reload to Apply\" and you should be automatically logged into Azure.  If not, go to the User Settings of your"
-    echo "GitHub account and manually set the CORAL_CLI_AZ_SP_APP_ID, CORAL_CLI_AZ_SP_PASSWORD, CORAL_CLI_TENANT_ID secrets "
+    echo "GitHub account and manually set the AZ_SP_APP_ID, AZ_SP_PASSWORD, AZ_SP_TENANT_ID secrets "
 
 }
 
-function getJson() {
-    string="${1}"
-
-    substring=$(echo "${string}" | grep -o 'appId:.*')
-    printf "this is the json: \n"
-    echo "${substring}"
-}
 
 clear
 echo "Creating a Service Principal"

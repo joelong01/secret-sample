@@ -8,7 +8,7 @@ if ! grep -q "${STARTUP_LINE}" "$HOME"/.bashrc; then
   # If it doesn't exist, append the line to the .bashrc file
   echo "${STARTUP_LINE}" >>"$HOME"/.bashrc
 fi
-LOCAL_ENV="$PWD/.devcontainer/local.env"
+LOCAL_ENV="$PWD/.devcontainer/local.env" 
 # create the secrets file if necessary
 if [[ ! -f $LOCAL_ENV ]]; then
   touch "$LOCAL_ENV"

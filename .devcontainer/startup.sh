@@ -82,7 +82,7 @@ function load_local_env() {
     # the following line disables the "follow the link linting", which we don't need here
 
     # shellcheck source=/dev/null
-    source "/workspaces/secret-sample/.devcontainer/local.env"
+    source "$PWD/.devcontainer/local.env"
     # a this is a config file in json format where we use jq to find/store settings
     STARTUP_OPTIONS_FILE="$PWD/.devcontainer/.localStartupOptions.json"
 
@@ -95,31 +95,35 @@ function load_local_env() {
 # as GITLAB_TOKEN.  Remember their decision in the $STARTUP_OPTIONS_FILE
 # side effects of this function:  USE_GITLABS and GITLAB_TOKEN are set
 function get_gitlab_token() {
-    USE_GITLAB=true
-
-    if [[ -f $STARTUP_OPTIONS_FILE ]]; then
-        USE_GITLAB=$(jq .useGitlab -r <"$STARTUP_OPTIONS_FILE")
+    if [[ -f "$STARTUP_OPTIONS_FILE" ]]; then
+        USE_GITLAB=$(jq -r '.useGitlab' < "$STARTUP_OPTIONS_FILE")
+    else
+        USE_GITLAB=true
     fi
 
-    # ech this text so that the dev working on this code knows to go to this file to change the setting
-    if [[ $USE_GITLAB == false ]]; then
+    # Print this message so developers can modify the setting
+    if ! "$USE_GITLAB"; then
         echo_info "useGitlab set to false in $STARTUP_OPTIONS_FILE."
         return 1
     fi
 
-    read -r -p "Would you like to use Gitlab? [yN]" USE_GITLAB
-    if [[ $USE_GITLAB == "y" || $USE_GITLAB == "Y" ]]; then
+    read -r -p "Would you like to use Gitlab? [y/N] " use_gitlab
+    # this regular expression checks for upper or lower case Y
+    if [[ "$use_gitlab" =~ ^[Yy]$ ]]; then
         USE_GITLAB=true
-        echo '{"useGitlab": true}' | jq >"$STARTUP_OPTIONS_FILE"
+        echo '{"useGitlab": true}' | jq > "$STARTUP_OPTIONS_FILE"
     else
         USE_GITLAB=false
-        echo '{"useGitlab": false}' | jq >"$STARTUP_OPTIONS_FILE"
+        echo '{"useGitlab": false}' | jq > "$STARTUP_OPTIONS_FILE"
         return 1
     fi
-    read -r -p "what is the value for GITLAB_TOKEN? " input
-    export GITLAB_TOKEN=$input
-    return 0
+
+    read -r -p "What is the value for GITLAB_TOKEN? " gitlab_token
+    GITLAB_TOKEN="$gitlab_token"
+    export USE_GITLAB
+    export GITLAB_TOKEN
 }
+
 
 # secret initialization - in this scenario, the only secret that the dev has to deal with is the GITLAB_TOKEN.  if other
 # secrets are needed, then this is where we would deal with them. we can either be in codespaces or running on a docker
