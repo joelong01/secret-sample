@@ -248,7 +248,7 @@ function load_local_env() {
 
 }
 ```
-> *function get_gitlab_token():  
+> *function get_gitlab_token()*  
 Ask the user if they want to use GitLab, and if so ask for the Gitlab token and export it as GITLAB_TOKEN.  Remember their decision in the $STARTUP_OPTIONS_FILE.  This function will set the USE_GITLABS and GITLAB_TOKEN environment variables. 
 ```sh
 function get_gitlab_token() {
