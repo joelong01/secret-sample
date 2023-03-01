@@ -184,7 +184,7 @@ function login_to_github() {
 
     # if we don't have the scopes we need, we must update them
     if [[ -z $SECRET_COUNT ]] && [[ $USER_LOGGED_IN == true ]]; then
-        echoWarning "You are not logged in with permissions to check user secrets.  Adding them by refreshing the token"
+        echo_warning "You are not logged in with permissions to check user secrets.  Adding them by refreshing the token"
         gh auth refresh --scopes user,repo,codespace:secrets
     fi
 

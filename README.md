@@ -37,14 +37,14 @@ In this project, there are three different logins required from the dev containe
 
 # Directory Structure
 .
-├── .devcontainer
-│   ├── create-azure-service-principal.sh
-│   ├── devcontainer.json
-│   ├── local.env
-│   ├── .localStartupOptions.json
-│   ├── postCreate.sh
-│   └── startup.sh
-├── .gitignore
+├── .devcontainer  
+│   ├── create-azure-service-principal.sh  
+│   ├── devcontainer.json  
+│   ├── local.env  
+│   ├── .localStartupOptions.json  
+│   ├── postCreate.sh  
+│   └── startup.sh  
+├── .gitignore  
 
 Here is a description of each file:
 
@@ -117,9 +117,10 @@ fi
 SECRET_SECTION=$(
   cat <<EOF
 
-# export is required so that when child processes are created # (say a terminal or running coraclcli) they also 
-# get these vars set if you need to add another env var, follow this pattern.  Note that these settings are 
-# *ignored* when running in Codespaces as the values are kept in Codespaces User Secrets
+# export is required so that when child processes are created # (say a terminal or running coraclcli) 
+# they also get these vars set if you need to add another env var, follow this pattern.  Note that 
+# these settings are *ignored* when running in Codespaces as the values are kept in Codespaces User 
+# Secrets
 
 GITLAB_TOKEN=
 export GITLAB_TOKEN
@@ -203,11 +204,7 @@ function login_to_azure() {
 
     # Check if signed in as service principal
     if [[ "$az_info" == *"/me"* ]]; then
-        echo_error "Error: You are logged in with a service principal which is not supported in this application."
-        echo_error "You will be logged out and then logged back in via the browser flow."
-        echo_error "Note: This will not work with VS Code running as a browser. Run the desktop VS Code instead."
-        az logout 2>/dev/null
-        azure_logged_in_user=""
+        return 0 
     fi
 
     # Prompt user to log in if not logged in
@@ -245,7 +242,8 @@ function load_local_env() {
     STARTUP_OPTIONS_FILE="$PWD/.devcontainer/.localStartupOptions.json"
 
     # tell the dev where the options are everytime a terminal starts so that it is obvious where to change a setting
-    echo_info "Local secrets file is $LOCAL_ENV.  Set environement variables there that you want to use locally."
+    echo_info "Local secrets file is $LOCAL_ENV."
+    echo_info "Set environement variables there that you want to use locally."
 
 }
 ```
@@ -310,7 +308,8 @@ function setup_secrets() {
     repo=$(gh repo view --json nameWithOwner | jq .nameWithOwner -r)
     gh secret set GITLAB_TOKEN --user --repos "$repo" --body "$GITLAB_TOKEN"
 
-    # if you are not in Codespaces, update the GITLAB_TOEKN= line in the secrets file to set the GitLab PAT
+    # if you are not in Codespaces, update the GITLAB_TOEKN= line in the secrets file to set the
+    # GitLab PAT
     if [[ -z $CODESPACES ]]; then
         sed -i "s/GITLAB_TOKEN=/GITLAB_TOKEN=$GITLAB_TOKEN/" "$LOCAL_ENV"
     fi
@@ -342,7 +341,8 @@ function login_to_github() {
 
     # if we don't have the scopes we need, we must update them
     if [[ -z $SECRET_COUNT ]] && [[ $USER_LOGGED_IN == true ]]; then
-        echoWarning "You are not logged in with permissions to check user secrets.  Adding them by refreshing the token"
+        echo_warning "You are not logged in with permissions to check user secrets."
+        echo_warning "Adding them by refreshing the token"
         gh auth refresh --scopes user,repo,codespace:secrets
     fi
 
