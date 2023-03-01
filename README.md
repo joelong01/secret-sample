@@ -112,8 +112,8 @@ fi
 >This section of the file creates the *local.env* file if it doesn't exist and then looks for the line ```LOCAL_ENV=``` and adds it if it isn't there or replaces it if it is.  The sed command of "replace the whole line if it starts with these characters" is a generally useful pattern to follow. 
 
 ```sh
-# Define the secret section - if there are more secrets, add them here and follow the pattern for getting the values
-# from the dev that is shown in startup.sh
+# Define the secret section - if there are more secrets, add them here and follow the pattern for 
+# getting the values from the dev that is shown in startup.sh
 SECRET_SECTION=$(
   cat <<EOF
 
@@ -241,7 +241,8 @@ function load_local_env() {
     # a this is a config file in json format where we use jq to find/store settings
     STARTUP_OPTIONS_FILE="$PWD/.devcontainer/.localStartupOptions.json"
 
-    # tell the dev where the options are everytime a terminal starts so that it is obvious where to change a setting
+    # tell the dev where the options are everytime a terminal starts so that it is obvious where
+    # to change a setting
     echo_info "Local secrets file is $LOCAL_ENV."
     echo_info "Set environement variables there that you want to use locally."
 
