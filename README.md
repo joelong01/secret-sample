@@ -421,7 +421,8 @@ Prompt the user for the name for the service principal, the subscription and the
 ```sh
     # Create a service principal and get the output as JSON - we do not redirect stderr to stdout to make parsing easier
     output=$(az ad sp create-for-rbac --name "$sp_name" --role contributor \
-        --scopes "/subscriptions/$subscription_id" --query "{ appId: appId, password: password }" --output json)
+        --scopes "/subscriptions/$subscription_id" \
+        --query "{ appId: appId, password: password }" --output json)
 ```
 >If the output is empty, the user will see an error that has been sent to stderr and the output variable will be the empty string.  Check for this and return if there is an error.
 ```sh
@@ -437,7 +438,8 @@ Prompt the user for the name for the service principal, the subscription and the
     app_id=$(echo "$output" | jq -r .appId)
     password=$(echo "$output" | jq -r .password)
     if [[ -z $app_id || -z $password || -z $tenant_id ]]; then
-        echo "There was a problem generating the service principal and one of the critical pieces of information came back null."
+        echo "There was a problem generating the service principal "
+        echo "and one of the critical pieces of information came back null."
         echo "Fix this issue and try again."
         # Print the app ID and password
         echo "Service Principal:"
