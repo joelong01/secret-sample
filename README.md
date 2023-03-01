@@ -374,6 +374,106 @@ login_to_github
 login_to_azure
 setup_secrets
 ```
+# Creating an Azure Service Principal
+The code in [create-azure-service-principal.sh](.devcontainer/create-azure-service-principal.sh) is designed to make it as easy as possible to create a service principal.  After collecting some information from the user, it will create the SP and then gather information about the SP to store as Codespaces User Secrets.  This code will be explained section by section below.  It designed such that the user can login to the azure cloud shell on portal.azure.com and then copy/paste (as plain text!) into the shell.  This seemed easier than finding a way to upload the file and call it as a shell script.  When comparing the readme.md to the actual file, some of the comments have been turned into markdown sections to make it easier to read/understand.
+
+>These two commands are explained at https://www.shellcheck.net/wiki/SC2148 and https://www.shellcheck.net/wiki/SC2181 The first says we should have a #!/bin/bash at the start -- but this file is designed to be copied and pasted into the Azure Cloud Shell, so it is really just a function and not a "script".  The second is to allow this code ```if [[ $? -ne 0 ]]``` to be written without a linter error, which is required so that the output can be redirected and captured along with checking the return value of the function.
+```sh
+#shellcheck disable=SC2148
+#shellcheck disable=SC2181
+```
+>Codespaces secrets need to be scoped to one or more repos.  Therefore, this file needs to know the repo that the user is working in.  The *startup.sh* script in the *azure_login()* function will check to see if the developer wants to create an Azure SP and echo out instructions to run this function.  When it does that it will update the above line to point to the current repo.
+```sh
+GITHUB_REPO=retaildevcrews/secret-sample-go
+```
+>This is the one and only function in this file and it can be called multiple times after the code is entered into the Azure Cloud Shell (or any other terminal where the user can login to azure using their personal identity).  Start by checking to make sure that the user is logged into Azure.
+```sh
+function create_azure_service_principal() {
+
+    # make sure the user is logged into Azure
+    az account show >/dev/null 2>&1
+    if [[ $? -ne 0 ]]; then
+        echo "You are not logged in to Azure. Please run 'az login' to log in."
+        exit 1
+    fi
+```
+Since we are storing user secrets in GitHub, we must log into GitHub with the proper scope.
+```sh
+    echo "You must login to GitHub in order to create GitHub Codespace secrets"
+    gh auth login --scopes user,repo,codespace:secrets
+
+```
+Prompt the user for the name for the service principal, the subscription and the tenant id.  To make it easier for the user, print out a table of all subscriptions they have access to, along with the associated tenant id.
+```sh
+    echo -n "Name of the service principal: "
+    read -r -p "" sp_name
+    echo "These are the subscriptions the logged in user has access to: "
+    az account list --output table --query '[].{Name:name, SubscriptionId:id}'
+    echo "You can use one of these or any other subscription you have access to."
+    echo -n "Subscription Id: "
+    read -r -p "" subscription_id
+
+    # Get the tenant ID associated with the subscription
+    tenant_id=$(az account show --subscription "${subscription_id}" --query "tenantId" --output tsv)
+    echo "Creating service Principal.  Name=$sp_name  Subscription=$subscription_id"
+```
+    Create the service principle and get the output we care about in json format
+```sh
+    # Create a service principal and get the output as JSON - we do not redirect stderr to stdout to make parsing easier
+    output=$(az ad sp create-for-rbac --name "$sp_name" --role contributor \
+        --scopes "/subscriptions/$subscription_id" --query "{ appId: appId, password: password }" --output json)
+```
+>If the output is empty, the user will see an error that has been sent to stderr and the output variable will be the empty string.  Check for this and return if there is an error.
+```sh
+    if [[ -z $output ]]; then
+        echo "Error Creating Service Principal.  Message: $output"
+        echo "Please fix the error and run create_azure_service_principal again."
+        return 2
+    fi
+
+```
+>use JQ to extract the appId and the password.  If either the appId or the password or the tenant Id that we got earlier is empty then warn the user and exit the function.  Note that there are often warnings coming back from ```az ad asp create-for-rbac```, but they are usually in the form "you are seeing private information, be careful"
+```sh
+    app_id=$(echo "$output" | jq -r .appId)
+    password=$(echo "$output" | jq -r .password)
+    if [[ -z $app_id || -z $password || -z $tenant_id ]]; then
+        echo "There was a problem generating the service principal and one of the critical pieces of information came back null."
+        echo "Fix this issue and try again."
+        # Print the app ID and password
+        echo "Service Principal:"
+        echo "  App ID: $app_id"
+        echo "  Password: $password"
+        echo "  Tenant ID: $tenant_id"
+        return 1
+    fi
+```
+> If we get here, we have the information we need, store the secrets as user secrets for the repository that is set at the top of the file.
+```sh
+    # we have non empty values -- store them in GH user secrets
+    gh secret set AZ_SP_APP_ID --user --repos "$GITHUB_REPO" --body "$app_id"
+    gh secret set AZ_SP_PASSWORD --user --repos "$GITHUB_REPO" --body "$password"
+    gh secret set AZ_SP_TENANT_ID --user --repos "$GITHUB_REPO" --body "$tenant_id"
+
+```
+>Finally, echo instructions to the user on what to do next
+```sh
+   cat <<EOF
+Go back to VS Code. You should have a toast popup that says "Your Codespace secrets 
+have changed." Click on "Reload to Apply" and you should be automatically logged into 
+Azure. If not, go to the User Settings of yourGitHub account and manually set the 
+AZ_SP_APP_ID, AZ_SP_PASSWORD, AZ_SP_TENANT_ID secrets.
+EOF
+}
+```
+>This is part of the file that is copied/pasted into the Azure Cloud Shell.  There will be a lot of text after the copy, so first the screen is cleared, and then the user is told that the function is being called, and then we just call the function.
+```sh
+clear
+echo "Creating a Service Principal"
+create_azure_service_principal
+
+```
+When the user goes back to VS Code and reloads the Codespace instance, VS Code and the Codespace extension will automatically set environment variables for the secrets.  the *startup.sh* script will use these environment variables to login to azure automatically.  
+
 
 # Wrap-up
 

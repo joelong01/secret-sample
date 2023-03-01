@@ -46,23 +46,7 @@ function create_azure_service_principal() {
     app_id=$(echo "$output" | jq -r .appId)
     password=$(echo "$output" | jq -r .password)
 
-    # add permissions to the Microsoft Graph so that we can do the AAD work needed for the AZ cli
-    az ad app permission add --id "$app_id" --api 00000003-0000-0000-c000-000000000000 --api-permissions 1bfefb4e-e0b5-418b-a88f-73c46d2cc8e9=Role
-
-    sp_info=$(az ad sp show --id "$app_id")
-    sp_id=$(echo "$sp_info" | jq .id -r)
-    resource_id=$(az ad sp show --id 00000003-0000-0000-c000-000000000000 | jq .id -r)
-    permission_id=$(az ad sp show --id 00000003-0000-0000-c000-000000000000 --query "appRoles[?value=='Group.Read.All']" | jq .[].id -r)
-    # grant the permission (URL contains principalId!)
-    az rest --method POST \
-    --uri https://graph.microsoft.com/v1.0/servicePrincipals/"$sp_id"/appRoleAssignments \
-    --body "{
-          \"principalId\": \"$sp_id\",
-          \"resourceId\": \"$resource_id\",
-          \"appRoleId\": \"$permission_id\"
-        }"
-
-    
+  
 
     if [[ $output == *"WARNING"* ]]; then
         echo "$output"
@@ -84,9 +68,11 @@ function create_azure_service_principal() {
     gh secret set AZ_SP_PASSWORD --user --repos "$GITHUB_REPO" --body "$password"
     gh secret set AZ_SP_TENANT_ID --user --repos "$GITHUB_REPO" --body "$tenant_id"
 
-    echo "Go back to VS Code.  You should have a toast popup that says \"Your Codespace secrets have changed.\""
-    echo "Click on \"Reload to Apply\" and you should be automatically logged into Azure.  If not, go to the User Settings of your"
-    echo "GitHub account and manually set the AZ_SP_APP_ID, AZ_SP_PASSWORD, AZ_SP_TENANT_ID secrets "
+   cat <<EOF
+Go back to VS Code. You should have a toast popup that says "Your Codespace secrets have changed."
+Click on "Reload to Apply" and you should be automatically logged into Azure. If not, go to the User Settings of your
+GitHub account and manually set the AZ_SP_APP_ID, AZ_SP_PASSWORD, AZ_SP_TENANT_ID secrets.
+EOF
 
 }
 
