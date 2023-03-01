@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the startup line to be added to the .bashrc
-STARTUP_LINE="source $PWD/.devcontainer/startup.sh"
+STARTUP_LINE="source $PWD/.devcontainer/onTerminalStart.sh"
 
 # Check if the startup line exists in the .bashrc file
 if ! grep -q "${STARTUP_LINE}" "$HOME"/.bashrc; then
@@ -26,7 +26,7 @@ else
 fi
 
 # Define the secret section - if there are more secrets, add them here and follow the pattern for getting the values
-# from the dev that is shown in startup.sh
+# from the dev that is shown in onTerminalStart.sh
 SECRET_SECTION=$(
   cat <<EOF
 

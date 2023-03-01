@@ -42,8 +42,8 @@ In this project, there are three different logins required from the dev containe
 │   ├── devcontainer.json  
 │   ├── local.env  
 │   ├── .localStartupOptions.json  
-│   ├── postCreate.sh  
-│   └── startup.sh  
+│   ├── onPostCreate.sh  
+│   └── onTerminalStart.sh  
 ├── .gitignore  
 
 File Descriptions:
@@ -51,17 +51,17 @@ File Descriptions:
 1. **.devcontainer**:  this is a folder that defines the container that the application will run in.
 2. **create-azure-service-principal.sh**: this is a self contained script that will guide the user to enter the data necessary to create an Azure Service Principal.  The generated Service Principal information (name, secret, and tenantId) will be stored as User Secrets in Codespaces
 3. **devcontainer.json**:  this contains the meta data that VS Code uses to create the container.  In particular, there is one line that must be added to make the system work:
-    ```"postCreateCommand": "/bin/bash -i -c 'source ./.devcontainer/postCreate.sh```
-4. **local.env**:  a file that *is not checked in* that contains environment variables (including secrets) that the developer needs to build and run the application.  this file is created by the **postCreate.sh** script.
-5. **.localStartupOptions.json**: a file that *is not checked in* that contains config used by the local-secrets scripts such as remembering options the user has selected.  It is created by **startup.sh**.
-7. **postCreate.sh**: the "handler" for the 'postCreateCommand". Its main job is to update the **.bashrc** so that **startup.sh** is run every time a terminal is started.  It is also a convenient place to "bootstrap" the system by creating files and adding information to them.  For example, this sample will create the **local.env** file and then add environment variables for the Gitlab PAT (GITLAB_TOKEN) and the location of the **local.env** file
+    ```"postCreateCommand": "/bin/bash -i -c 'source ./.devcontainer/onPostCreate.sh```
+4. **local.env**:  a file that *is not checked in* that contains environment variables (including secrets) that the developer needs to build and run the application.  this file is created by the **onPostCreate.sh** script.
+5. **.localStartupOptions.json**: a file that *is not checked in* that contains config used by the local-secrets scripts such as remembering options the user has selected.  It is created by **onTerminalStart.sh**.
+7. **onPostCreate.sh**: the "handler" for the 'postCreateCommand". Its main job is to update the **.bashrc** so that **onTerminalStart.sh** is run every time a terminal is started.  It is also a convenient place to "bootstrap" the system by creating files and adding information to them.  For example, this sample will create the **local.env** file and then add environment variables for the Gitlab PAT (GITLAB_TOKEN) and the location of the **local.env** file
 8. **.gitignore**:  git infrastructure file used to ignore files so they won't be checked into the repo.  To ensure that **local.env** is not checked in, the line ```*local*.*``` is added to the .gitignore, making it so that anything that has the string "local" in it won't be checked in.  
   
 ## Implementation
 
-To initialize the process for each of the logins, code needs to be executed when a terminal is started. This code will verify the presence of valid secrets, check if authentication has already occurred, and prompt the developer for any necessary actions. The most straightforward approach is to run the code in the **.bashrc** startup script. To ensure maintainability, a **startup.sh** script is included in the project and added to **.bashrc**, which will be executed every time a new terminal is created. The code is added to the .**bashrc** by running a script specified in the **devcontainer.json**.
+To initialize the process for each of the logins, code needs to be executed when a terminal is started. This code will verify the presence of valid secrets, check if authentication has already occurred, and prompt the developer for any necessary actions. The most straightforward approach is to run the code in the **.bashrc** startup script. To ensure maintainability, a **onTerminalStart.sh** script is included in the project and added to **.bashrc**, which will be executed every time a new terminal is created. The code is added to the .**bashrc** by running a script specified in the **devcontainer.json**.
 ```json
-"postCreateCommand": "/bin/bash -c 'source ./.devcontainer/postCreate.sh'"
+"postCreateCommand": "/bin/bash -c 'source ./.devcontainer/onPostCreate.sh'"
 ```
 *postCreateCommand* is called by the VS Code container extension after the container is created (see https://code.visualstudio.com/docs/devcontainers/create-dev-container)
 
@@ -71,16 +71,16 @@ For any files created that should not be checked into the code repository, they 
 ```
 When creating the dev container, the following code is run using the *postCreateCommand* in the **devcontainer.json** file.
 ```console
-"postCreateCommand": "/bin/bash -c './.devcontainer/postCreate.sh'"
+"postCreateCommand": "/bin/bash -c './.devcontainer/onPostCreate.sh'"
 ```
-This simply tells VS Code to run the bash script call **postCreate.sh**
+This simply tells VS Code to run the bash script call **onPostCreate.sh**
 
-The [postCreate.sh](.devcontainer/postCreate.sh) script looks like this, divided up as section for easier explanation:
+The [onPostCreate.sh](.devcontainer/onPostCreate.sh) script looks like this, divided up as section for easier explanation:
 ```sh
 #!/bin/bash
 
 # Define the startup line to be added to the .bashrc
-STARTUP_LINE="source $PWD/.devcontainer/startup.sh"
+STARTUP_LINE="source $PWD/.devcontainer/onTerminalStart.sh"
 
 # Check if the startup line exists in the .bashrc file
 if ! grep -q "${STARTUP_LINE}" "$HOME"/.bashrc; then
@@ -113,7 +113,7 @@ fi
 
 ```sh
 # Define the secret section - if there are more secrets, add them here and follow the pattern for 
-# getting the values from the dev that is shown in startup.sh
+# getting the values from the dev that is shown in onTerminalStart.sh
 SECRET_SECTION=$(
   cat <<EOF
 
@@ -142,7 +142,7 @@ fi
 # add anything that needs to be run when the container is created
 
 ```
-> This section checks to see if the app is running in Codespaces and if not, adds the GITLAB_TOKEN key to the .env file.  Note that it isn't set yet - that will happen in *startup.sh*. If there are other secrets to add to the project, add them to the SECRET_SECTION following the pattern above.
+> This section checks to see if the app is running in Codespaces and if not, adds the GITLAB_TOKEN key to the .env file.  Note that it isn't set yet - that will happen in *onTerminalStart.sh*. If there are other secrets to add to the project, add them to the SECRET_SECTION following the pattern above.
 >
 > This script is run every time a terminal is started.  it does the following:
 > 1. load the local environment from local.env
@@ -150,8 +150,8 @@ fi
 > 3. login to azure, optionally with a service principal
 > 4. setup the secrets
 
-## startup.sh
-Next, we will go through the startup.sh script and explain what each part of it does.  the format is in 
+## onTerminalStart.sh
+Next, we will go through the onTerminalStart.sh script and explain what each part of it does.  the format is in 
 > *function ()*:
 > Description
 ```sh
@@ -231,7 +231,7 @@ function login_to_azure() {
 }
 ```
 > *load_local_env()*  
-This function loads the local secrets and lets the user know where those secrets are stored.  Echoing the location is a key part of the scenario as it "guides" the developer to the right spot if they need to update or add additional environment variables.  The shellcheck comment below is a way of turning off a shell linter warning that it can't follow the link to check the referenced file.  As we check it separately, it isn't needed here.  the LOCAL_ENV environment variable is set in the local.env file by the *postCreate.sh*
+This function loads the local secrets and lets the user know where those secrets are stored.  Echoing the location is a key part of the scenario as it "guides" the developer to the right spot if they need to update or add additional environment variables.  The shellcheck comment below is a way of turning off a shell linter warning that it can't follow the link to check the referenced file.  As we check it separately, it isn't needed here.  the LOCAL_ENV environment variable is set in the local.env file by the *onPostCreate.sh*
 > Note that the line ```"source "$PWD/.devcontainer/local.env"``` is not ```source $LOCAL_ENV``` because \$LOCAL_ENV is set by executing this line...so $LOCAL_ENV is "" until after this line.
 ```sh
 function load_local_env() {
@@ -383,7 +383,7 @@ The code in [create-azure-service-principal.sh](.devcontainer/create-azure-servi
 #shellcheck disable=SC2148
 #shellcheck disable=SC2181
 ```
->Codespaces secrets need to be scoped to one or more repos.  Therefore, this file needs to know the repo that the user is working in.  The *startup.sh* script in the *azure_login()* function will check to see if the developer wants to create an Azure SP and echo out instructions to run this function.  When it does that it will update the above line to point to the current repo.
+>Codespaces secrets need to be scoped to one or more repos.  Therefore, this file needs to know the repo that the user is working in.  The *onTerminalStart.sh* script in the *azure_login()* function will check to see if the developer wants to create an Azure SP and echo out instructions to run this function.  When it does that it will update the above line to point to the current repo.
 ```sh
 GITHUB_REPO=retaildevcrews/secret-sample-go
 ```
@@ -476,7 +476,7 @@ echo "Creating a Service Principal"
 create_azure_service_principal
 
 ```
-When the user goes back to VS Code and reloads the Codespace instance, VS Code and the Codespace extension will automatically set environment variables for the secrets.  the *startup.sh* script will use these environment variables to login to azure automatically.  
+When the user goes back to VS Code and reloads the Codespace instance, VS Code and the Codespace extension will automatically set environment variables for the secrets.  the *onTerminalStart.sh* script will use these environment variables to login to azure automatically.  
 
 
 # Wrap-up
@@ -512,7 +512,7 @@ However, it did not meet the design goals:
 3.  Including the export breaks the ability to import the file into developer tools such as the Golang Debugger. (Note: the *export* command can be run in a separate shell command)
 4.  It is still a “magic” setting that needs to be documented in README and discovered by the dev for it to work.
 
-To meet the design goals, the **startup.sh** script handles the best possible case for each of the services (GitLab uses the personal access token, but GitHub uses the **gh** cli). The script also validates each login when a terminal is created and makes it clear to the developer any actions needed. The developer doesn’t need to find the instructions in README.
+To meet the design goals, the **onTerminalStart.sh** script handles the best possible case for each of the services (GitLab uses the personal access token, but GitHub uses the **gh** cli). The script also validates each login when a terminal is created and makes it clear to the developer any actions needed. The developer doesn’t need to find the instructions in README.
 
 **Adding secrets using attributes in devcontainer.json**
 
