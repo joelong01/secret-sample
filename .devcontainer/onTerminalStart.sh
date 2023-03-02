@@ -27,6 +27,62 @@ function echo_warning() {
 function echo_info() {
     printf "${GREEN}%s${NORMAL}\n" "${*}"
 }
+#
+# called when running in Codespaces
+# this gives instructions on how to create a service principal and then collects information from the user needed to login to azure
+# using a azure service principal.  the function will also store the needed information as code spaces secrets so that when the user
+# runs in codespaces (or reattach's) then the azure login will work.
+function azure_service_principal_login_and_secrets() {
+
+    if [[ -n $CORAL_CLI_AZ_SP_APP_ID && -n $CORAL_CLI_AZ_SP_PASSWORD && -n $CORAL_CLI_TENANT_ID ]]; then
+        login_info=$(az login --service-principal -u "$CORAL_CLI_AZ_SP_APP_ID" -p \
+            "$CORAL_CLI_AZ_SP_PASSWORD" --tenant "$CORAL_CLI_TENANT_ID" 2>/dev/null)
+        if [[ -n $login_info ]]; then
+            echo_info "Logged in with Service Principal"
+            return 0
+        fi
+    fi
+
+    # update the script to have the current repo - this should rarely change from what is already there, but set it none-the-less
+    script=".devcontainer/create-azure-service-principal.sh"
+    repo=$(gh repo view --json nameWithOwner | jq .nameWithOwner -r)
+    sed -i "s|^GITHUB_REPO=|c\GITHUB_REPO=\"$repo" "$script"
+
+    cat <<EOF
+You are not logged into Azure and you are running in a Codespace.  To reliably login to Azure when running in a browser, 
+you need to login with an Azure Service Principal.  This branch has a script (.devcontainer/create-azure-service-principal.sh) 
+that will create a service principal.  However, you must be logged into Azure to run it.  
+To do so, follow these instructions:
+    1.  go to https://ms.portal.azure.com
+    2.  start cloud shell. make sure it is a "bash" shell
+    3.  copy the entire contents of create-azure-service-principal.sh (file which is in the same directory as this file) and paste in 
+        into the Azure Cloud Shell.  This will collect and store secrets in your GitHub account that will be used to login to Azure
+        when running in CodeSpace
+    4.  come back to this terminal and reconnect to codespaces when you are prompted.
+EOF
+
+    read -r -p "Hit Enter to continue: "
+
+    # login with the information provided to make sure it works
+    login_info=$(az login --service-principal -u "$CORAL_CLI_AZ_SP_APP_ID" -p "$CORAL_CLI_AZ_SP_PASSWORD" --tenant "$CORAL_CLI_TENANT_ID" 2>/dev/null)
+    # login_info is empty if the az login failed for some reason
+    # recurse if the user wants to try again
+    if [[ -z $login_info ]]; then
+        echo_error "Error logging into Azure using the provided information. Would you like to try again? [Yyn]"
+        read -r -p "" input
+        if [[ $input == "Y" || $input == "y" || $input == "" ]]; then
+            # clear the variables so that we don't attemp a login at the start of the function
+            CORAL_CLI_AZ_SP_APP_ID=""
+            CORAL_CLI_AZ_SP_PASSWORD=""
+            CORAL_CLI_TENANT_ID=""
+
+            azure_service_principal_login_and_secrets
+        else
+            return 2 #give up?
+        fi
+    fi
+
+}
 
 # As this scenario is to be able to have an application that logs into GitHub, GitLab, and the AzureCLI in both
 # local docker containers and in CodeSpaces. There are 3 scenarios for working in this repo, all with slightly
@@ -123,11 +179,11 @@ function get_gitlab_token() {
     export GITLAB_TOKEN
 }
 
-# secret initialization - in this scenario, the only secret that the dev has to deal with is the GITLAB_TOKEN.  if 
-# other secrets are needed, then this is where we would deal with them. we can either be in codespaces or running on a 
+# secret initialization - in this scenario, the only secret that the dev has to deal with is the GITLAB_TOKEN.  if
+# other secrets are needed, then this is where we would deal with them. we can either be in codespaces or running on a
 # docker container on someone's desktop.  if we are in codespaces e can store per-dev secrets in GitHub and not have to
 # worry aboutstoring them locally.  Codespaces will set an environment variable CODESPACES=true if it is in codespaces.
-# Even if we are not in Codespaces, we still set he user secret in Github so that if codespaces is used, it will be 
+# Even if we are not in Codespaces, we still set he user secret in Github so that if codespaces is used, it will be
 # there. The pattern is
 # 1. if the secret is set, return
 # 2. get the value and then set it as a user secret for the current repo
