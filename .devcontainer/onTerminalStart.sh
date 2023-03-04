@@ -372,7 +372,7 @@ function login_to_github() {
     fi
 }
 # make sure the gitignore has the line to ignore *local*.* files
-function fix_git_ignore {
+function fix_git_ignore() {
     # Check if .gitignore file exists in current directory
     if [[ ! -f .gitignore ]]; then
         touch .gitignore

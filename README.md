@@ -6,23 +6,25 @@ Secure software delivery is a fundamental aspect of software development and ope
 
 This document is focused on ways for developers to configure secrets in their inner loop environment. For best practices on managing secrets for deployed applications, refer to the [Microsoft Solution Playbook Secrets Store content](https://preview.ms-playbook.com/code-with-devsecops/Capabilities/02-Develop/Secrets-Store/). Another good practice to consider is enabling [Secrets Detection](https://preview.ms-playbook.com/code-with-devsecops/Capabilities/02-Develop/Secrets-Detection/) for any case a developer accidentally checks-in a secret.
 
-The scenario for this example is a project that needs to have the developer (and the user of the app) login to Azure, GitHub, and GitLab.  Azure login is handled via **az login**, GitHub via **gh auth login** and GitLab via a PAT.  The dev environment must support 3 scenarios:
+The scenario for this example is a project that needs to have the developer (and the user of the app) login to Azure, GitHub, and GitLab.  Azure login is handled either via logging in with user credentials following the normal **az login** browser flow, or by logging in with an Azure Service Principle. GitHub login is done using **gh auth login** and GitLab via a PAT.  The dev environment must support 3 scenarios:
 
 1. Running in a local docker container.  
 2. Running in a GitHub Codespaces container, using the VS Code rich client
 3. Running in a GitHub Codespaces container, using the VS Code web client
 
-Both the Azure CLI and the GitHub cli have support for storing their secret used for login outside of the repo so neither of them require local secret storage.
+Both the Azure CLI and the GitHub cli have support for storing their secret used for login outside of the repo so neither of them require local secret storage. However, if the user decides to login to Azure using a Service Principle while they are not using Codespaces, then the secret information necessary to use the Service Principal is stored locally.
 
 The scenario also requires being able login to Azure when using the Codespaces with the VS Code Web Client.  In that configuration, redirect to localhost doesn't work so you can't use the normal flows for **az login** and **az login --use-device-code** won't work because that also doesn't support running in a browser.  Therefore, the scenario requires logging in with an Azure Service Principal
 
 However, the GitLab PAT must be stored locally. For each of the hosting options, the GitLab PAT and the Azure login works as follows:
 
-| Host                     |  PAT Location          |   Azure Login             |
-|---                     |---                     |---                        |
-|  Local Docker          | *local.env* file        | Browser flow              |
-|  Codespaces, Rich Client  | Codespaces User Secrets   | Browser flow              |
-|  Codespaces, Web Client  | Codespaces User Secrets | Service Principal Login   |
+| Host|Azure User Login|Azure Service Principal Login|
+|--- |---|---|
+|  Local Docker|supported|supported|
+|  Codespaces, Rich Client|supported|supported|
+|  Codespaces, Web Client|not supported|supported|
+
+In all cases, if the user is running in GitHub Codespaces, the secrets are stored as User Codespaces Secrets (https://github.com/settings/codespaces).  When running outside of Codespaces, then the secrets are either stored via the CLIs (e.g. az login or gh auth login) or in a local.env file.  To protect against accidentally checking in user secrets, the pattern "\*local.\*" is added to the .gitignore file.
 
 ## Design Goals
 
@@ -30,33 +32,34 @@ However, the GitLab PAT must be stored locally. For each of the hosting options,
 2. Secure by Default: The repository should be secure by default, making it as difficult as possible to accidentally check-in secrets. The repo is shared, but some secrets should be private to the individual developers. As much as possible, secrets should not be stored in clear text in the container. Ideally they shouldn’t be stored on the box anywhere.
 3. Portable: The project should work in a docker container or in Codespaces.
 4. Idempotent:  if there is a problem in the collection, use, or storage of the secrets, the system will do the right thing to eventually get to the correct state.
+5. Self correcting: if a developer accidentally breaks something, the system should fix it as much as possible.
 
 ## Design
 
 In this project, there are three different logins required from the dev container: Azure CLI, GitHub, and GitLab. Each of these logins have a unique approach for authenticating, storing secrets securely in the container environment, and using the secrets to establish a connection the next time the dev container is started. The following describes the implementation of authentication for each login, taking into consideration the previously outlined design goals.
 
-## Directory Structure
-
-.
-├── .devcontainer  
-│   ├── create-azure-service-principal.sh  
-│   ├── devcontainer.json  
-│   ├── local.env  
-│   ├── .localStartupOptions.json  
-│   ├── onPostCreate.sh  
-│   └── onTerminalStart.sh  
-├── .gitignore  
+### Directory Structure
+ 
+├── .gitignore   
+└── .devcontainer   
+    ├── onTerminalStart.sh   
+    ├── onPostCreate.sh   
+    ├── localStartupOptions.json   
+    ├── local.env   
+    ├── devcontainer.json   
+    └── create-azure-service-principal.sh   
 
 File Descriptions:
 
-1. **.devcontainer**:  this is a folder that defines the container that the application will run in.
-2. **create-azure-service-principal.sh**: this is a self contained script that will guide the user to enter the data necessary to create an Azure Service Principal.  The generated Service Principal information (name, secret, and tenantId) will be stored as User Secrets in Codespaces
-3. **devcontainer.json**:  this contains the meta data that VS Code uses to create the container.  In particular, there is one line that must be added to make the system work:
+1. **.gitignore**: the standard git file.  the onTerminalStart.sh script will check to see if the "\*local.\*" pattern is set in the .gitignore, and if not, will add it. 
+2. **.devcontainer**:  this is a folder that defines the container that the application will run in.
+3. **onTerminalStart.sh**: run every time a terminal starts.  This is the main "driver" of the system and drives the collection, storage, and use of information to enable the scenario of logging into GitHub, Azure, and storing a GitLab PAT.
+4. **onPostCreate.sh**: the "handler" for the 'postCreateCommand". Its main job is to update the **.bashrc** so that **onTerminalStart.sh** is run every time a terminal is started.  It is also a convenient place to "bootstrap" the system by creating files and adding information to them.  For example, this sample will create the **local.env** file and then add environment variables for the Gitlab PAT (GITLAB_TOKEN) and the location of the **local.env** file
+5. **localStartupOptions.json**: a file *is not checked in* and contains config used by the local-secrets scripts such as remembering options the user has selected.  It is created by **onTerminalStart.sh**.
+6. **local.env**:  a file that *is not checked in* that contains environment variables (including secrets) that the developer needs to build and run the application.  this file is created by the **onPostCreate.sh** script.
+8. **devcontainer.json**:  this contains the meta data that VS Code uses to create the container.  In particular, there is one line that must be added to make the system work:
     ```"postCreateCommand": "/bin/bash -i -c 'source ./.devcontainer/onPostCreate.sh```
-4. **local.env**:  a file that *is not checked in* that contains environment variables (including secrets) that the developer needs to build and run the application.  this file is created by the **onPostCreate.sh** script.
-5. **.localStartupOptions.json**: a file that *is not checked in* that contains config used by the local-secrets scripts such as remembering options the user has selected.  It is created by **onTerminalStart.sh**.
-6. **onPostCreate.sh**: the "handler" for the 'postCreateCommand". Its main job is to update the **.bashrc** so that **onTerminalStart.sh** is run every time a terminal is started.  It is also a convenient place to "bootstrap" the system by creating files and adding information to them.  For example, this sample will create the **local.env** file and then add environment variables for the Gitlab PAT (GITLAB_TOKEN) and the location of the **local.env** file
-7. **.gitignore**:  git infrastructure file used to ignore files so they won't be checked into the repo.  To ensure that **local.env** is not checked in, the line ```*local*.*``` is added to the .gitignore, making it so that anything that has the string "local" in it won't be checked in.  
+9. **create-azure-service-principal.sh**: this is a self contained script that will guide the user to enter the data necessary to create an Azure Service Principal.  The generated Service Principal information (name, secret, and tenantId) will be stored as User Secrets in Codespaces.
   
 ## Implementation
 
@@ -73,6 +76,7 @@ For any files created that should not be checked into the code repository, they 
 ```sh
 *local*.*
 ```
+If the .gitignore file does not exist, or if the line is missing, *onTerminalStart.sh* will add the line to the file.
 
 When creating the dev container, the following code is run using the *postCreateCommand* in the **devcontainer.json** file.
 
@@ -84,6 +88,7 @@ This simply tells VS Code to run the bash script call **onPostCreate.sh**
 
 The [onPostCreate.sh](.devcontainer/onPostCreate.sh) script looks like this, divided up as section for easier explanation:
 
+> This section checks to see if the line already exists in the *.bashrc* file and if so, replaces it with the proper line. If it is not there it adds it.  
 ```sh
 #!/bin/bash
 
@@ -97,7 +102,8 @@ if ! grep -q "${STARTUP_LINE}" "$HOME"/.bashrc; then
 fi
 ```
 
-> This section checks to see if the line already exists in the *.bashrc* file and if so, replaces it with the proper line. If it is not there it adds it.  
+
+>The following section of the file creates the *local.env* file if it doesn't exist and then looks for the line ```LOCAL_ENV=``` and adds it if it isn't there or replaces it if it is.  The sed command of "replace the whole line if it starts with these characters" is a generally useful pattern to follow.
 
 ```sh
 LOCAL_ENV="$PWD/.devcontainer/local.env"
@@ -117,8 +123,7 @@ else
   sed -i "s|^LOCAL_ENV=.*|LOCAL_ENV=\"$LOCAL_ENV\"|" "$LOCAL_ENV"
 fi
 ```
-
->This section of the file creates the *local.env* file if it doesn't exist and then looks for the line ```LOCAL_ENV=``` and adds it if it isn't there or replaces it if it is.  The sed command of "replace the whole line if it starts with these characters" is a generally useful pattern to follow.
+> This section checks to see if the app is running in Codespaces and if not, adds the GITLAB_TOKEN key to the .env file.  Note that it isn't set yet - that will happen in *onTerminalStart.sh*. If there are other secrets to add to the project, add them to the SECRET_SECTION following the pattern above.
 
 ```sh
 # Define the secret section - if there are more secrets, add them here and follow the pattern for 
@@ -151,17 +156,13 @@ fi
 # add anything that needs to be run when the container is created
 
 ```
-
-> This section checks to see if the app is running in Codespaces and if not, adds the GITLAB_TOKEN key to the .env file.  Note that it isn't set yet - that will happen in *onTerminalStart.sh*. If there are other secrets to add to the project, add them to the SECRET_SECTION following the pattern above.
->
-> This script is run every time a terminal is started.  it does the following:
->
-> 1. load the local environment from local.env
-> 2. login to GitHub with the proper scope
-> 3. login to azure, optionally with a service principal
-> 4. setup the secrets
-
 ## onTerminalStart.sh
+
+This script is run every time a terminal is started.  it does the following:
+1. load the local environment from local.env
+2. login to GitHub with the proper scope
+3. login to azure, optionally with a service principal
+4. sets up the secrets
 
 Next, we will go through the onTerminalStart.sh script and explain what each part of it does.  the format is in
 > *function ()*:
@@ -198,72 +199,265 @@ function echo_info() {
     printf "${GREEN}%s${NORMAL}\n" "${*}"
 }
 ```
+> these are functions that read or write meta data to the *localStartupOptions.json* file
 
+```sh
+
+# a this is a config file in json format where we use jq to find/store settings
+STARTUP_OPTIONS_FILE="$PWD/.devcontainer/localStartupOptions.json"
+
+# this function takes a key and sets $value to be the its value. may be null
+function get_setting() {
+    local key
+    local value
+    key=$1
+    value=$(jq -r ".$key" "$STARTUP_OPTIONS_FILE")
+    echo "$value"
+}
+# save a json setting to the file localStartupOptions.json
+function write_setting() {
+
+    local key
+    local value
+    local tmp
+    tmp=$(mktemp)
+    key="$1"
+    value="$2"
+
+    if [ -f "$STARTUP_OPTIONS_FILE" ]; then
+        # if the file exists, update the value for the given key while preserving existing keys/values
+        jq --arg k "$key" --arg v "$value" '.[$k] |= $v' "$STARTUP_OPTIONS_FILE" >"$tmp"
+    else
+        # if the file doesn't exist, create a new one with the given key/value pair
+        echo "{\"$key\": \"$value\"}" >"$tmp"
+    fi
+    mv "$tmp" "$STARTUP_OPTIONS_FILE"
+}
+```
+>When using a SP login not in codespaces, we need to save appId, TenantId, and Password to use login with a Azure Service Principle.  This function prompts for each and then either updates or adds the keys the the local.env file.  Not storing these keys locally is big value prop for using Codespaces!
+```sh
+
+function save_sp_secrets_locally() {
+    read -r -p "What is the AppId? " AZ_SP_APP_ID
+    export AZ_SP_APP_ID
+    # Replace or add the AZ_SP_APP_ID variable in $LOCAL_ENV
+    if grep -q "^AZ_SP_APP_ID=" "$LOCAL_ENV"; then
+        sed -i "s|^AZ_SP_APP_ID=.*|AZ_SP_APP_ID=\"$AZ_SP_APP_ID\"|" "$LOCAL_ENV"
+    else
+        cat << EOF >> "$LOCAL_ENV"
+export AZ_SP_APP_ID
+AZ_SP_APP_ID=$AZ_SP_APP_ID
+EOF
+
+    fi
+    read -r -p "What is the Password? " AZ_SP_PASSWORD
+    export AZ_SP_PASSWORD
+    # Replace or add the AZ_SP_PASSWORD variable in $LOCAL_ENV
+    if grep -q "^AZ_SP_PASSWORD=" "$LOCAL_ENV"; then
+        sed -i "s|^AZ_SP_PASSWORD=.*|AZ_SP_PASSWORD=\"$AZ_SP_PASSWORD\"|" "$LOCAL_ENV"
+    else
+       cat << EOF >> "$LOCAL_ENV"
+export AZ_SP_PASSWORD
+AZ_SP_PASSWORD=$AZ_SP_PASSWORD
+EOF
+
+    fi
+
+    read -r -p "What is the TenantId? " AZ_SP_TENANT_ID
+    export AZ_SP_TENANT_ID
+    # Replace or add the AZ_SP_TENANT_ID variable in $LOCAL_ENV
+    if grep -q "^AZ_SP_TENANT_ID=" "$LOCAL_ENV"; then
+        sed -i "s|^AZ_SP_TENANT_ID=.*|AZ_SP_TENANT_ID=\"$AZ_SP_TENANT_ID\"|" "$LOCAL_ENV"
+    else
+        cat << EOF >> "$LOCAL_ENV"
+export AZ_SP_TENANT_ID
+AZ_SP_TENANT_ID=$AZ_SP_TENANT_ID
+EOF
+
+    fi
+
+}
+```
+> *function azure_service_principal_login_and_secrets()*  
+
+This gives instructions on how to create a service principal and then collects information from the user needed to
+login using a Azure Service Principal.  The *create-azure-service-principal.sh* code will also store the needed information as Codespaces secrets so that when the user runs in codespaces (or reattach's) then the azure login will work. If the user picks logging into Azure with a Service Principal and they are not running in Codespaces, then the *save_sp_secrets_locally* function is called and the SP information is stored in the *local.env* file
+
+```sh
+
+function azure_service_principal_login_and_secrets() {
+
+    local script
+    local repo
+    script=".devcontainer/create-azure-service-principal.sh"
+    repo=$(gh repo view --json nameWithOwner | jq .nameWithOwner -r)
+
+    if [[ -n "$AZ_SP_APP_ID" && -n "$AZ_SP_PASSWORD" && -n "$AZ_SP_TENANT_ID" ]]; then
+        login_info=$(az login --service-principal -u "$AZ_SP_APP_ID" -p "$AZ_SP_PASSWORD" \
+            --tenant "$AZ_SP_TENANT_ID" 2>/dev/null)
+        if [[ -n "$login_info" ]]; then
+            echo_info "Logged in with Service Principal"
+            return 0
+        fi
+    fi
+    # if any of those value are empty, then we tell the user to rerun the script
+    # in this context, we have the repo that we are running in, so we update the Repo in the script
+    sed -i "s|^GITHUB_REPO=.*|GITHUB_REPO=\"$repo\"|" "$script"
+
+    cat <<EOF
+To reliably login to Azure when running in a browser, you need to login with an Azure Service Principal. This branch 
+has a script (create-azure-service-principal.sh) that will create a service principal. However, you must be logged into 
+Azure to run it.
+
+To do so, follow these instructions:
+    1. Go to https://ms.portal.azure.com
+    2. Start cloud shell. Make sure it is a "bash" shell
+    3. Copy the entire contents of create-azure-service-principal.sh (file which is in the same directory as this file)
+       and paste it into the Azure Cloud Shell. This will collect and store secrets in your GitHub account that will be 
+       used to login to Azure when running in CodeSpace
+    4. Come back to this terminal and reconnect to codespaces when you are prompted.
+
+If you are running in Codespaces, you will be prompted to reconnect to the Codespace and the environment variables will
+automatically be set to allow onTerminalStart.sh to log into Azure using the SP. If you are not in Codespaces, these 
+settings are saved in local.env.  
+
+This script will prompt you for the values and you can copy and paste them from your Azure Cloud Shell.
+
+EOF
+
+    read -n 1 -s -r -p "Hit any key to continue: "
+    echo ""
+    # if we are not running in Codespaces, we need to store the secrets in the local.env file
+    if [[ -z $CODESPACES ]]; then
+        save_sp_secrets_locally
+    fi
+
+    # login with the information provided to make sure it works
+    login_info=$(az login --service-principal -u "$AZ_SP_APP_ID" -p "$AZ_SP_PASSWORD" \
+        --tenant "$AZ_SP_TENANT_ID" 2>/dev/null)
+    # login_info is empty if the az login failed for some reason
+    # recurse if the user wants to try again
+    if [[ -z "$login_info" ]]; then
+        echo_error "Error logging into Azure using the provided information. Would you like to try again? [Y/n]"
+        read -n 1 -s -r input
+        echo
+        if [[ "$input" == "Y" || "$input" == "y" || "$input" == "" ]]; then
+            # clear the variables so that we don't attempt a login at the start of the function
+            AZ_SP_APP_ID=""
+            AZ_SP_PASSWORD=""
+            AZ_SP_TENANT_ID=""
+
+            azure_service_principal_login_and_secrets
+        else
+            return 1 # give up?
+        fi
+
+    fi
+
+}
+```
+> *function verify_azure_login*
+> Checks to see if the user is logged into azure (either SP or user creds) and echo's out info about creds used.
+```sh
+
+function verify_azure_login() {
+    local az_info
+    # Get signed-in user info
+    az_info=$(az ad signed-in-user show 2>&1)
+
+    # Check if signed in as service principal
+    if [[ "$az_info" == *"/me"* ]]; then
+        az_info=$(az ad sp show --id "$AZ_SP_APP_ID")
+        echo_info "Logged in as Service Principle Name: $(echo "$az_info" | jq .displayName)"
+        return 0
+    fi
+    # Extract user display name from JSON output
+    azure_logged_in_user=$(echo "$az_info" | jq -r '.displayName' 2>/dev/null)
+    if [[ -n $azure_logged_in_user ]]; then #already logged in
+        echo_info "Logged in to Azure as $azure_logged_in_user"
+        return 0
+    fi
+
+    return 1 #not logged in
+}
+```
 >*function login_to_azure()*  
-As this scenario is to be able to have an application that logs into GitHub, GitLab, and the AzureCLI in both local docker containers and in CodeSpaces. there are 3 scenarios for working in this repo, all with slightly different ways of dealing with secrets and azure
+As this scenario is to be able to have an application that logs into GitHub, GitLab, and the AzureCLI in both local docker containers and in CodeSpaces. there are 2 scenarios for working in this repo, all with slightly different ways of dealing with secrets and azure
 >
-> 1. use a local docker container.  there secrets are stored in local-secrets.env
-> 2. using the desktop version of VS Code running against a code space instance. Secrets are stored in GitHub Codespaces User Secrets
-> 3. use the browser version of VS Code running against a code space instance. Secrets are stored in GitHub Codespaces User Secrets
+> 1. use a local docker container.  all secrets are stored in local-secrets.env
+> 2. use Codespaces and then all secrets are stored as Codespaces User Secrets
 >
 > One of the problems using the AZ CLI in Codespaces is that the call to login via "az login" simply hangs during the redirect to localhost.  If the login is via "az login --user-device-code" it will appear to work, but the user is not actually logged in. The strategy here is to check to see if the environment variables for the Service Principal are set, and if so, ask the user if they want to use them to login to Azure.  If not, issue an "az login" command.  One of the downsides of using a Service Principal is that the permissions of a SP are often less than the permissions that are granted to a SP by default -- and granting more permissions often requires an AAD admin to approve.  This is can be very hard, depending on the policies of the company.  Sometimes, this might force a scenario where a Service Principal cannot be supported.  Since the secrets in Codespaces are key/value pairs the names of the secrets (e.g. AZ_SP_APP_ID) are used across all repos.  If the dev scenarios require a separate secret for a particular project, the script should be updated to look for additional or different secret names.
 >
 ```sh
 function login_to_azure() {
     # Set up variables
-    local az_info
-    local azure_logged_in_user
 
-    # Get signed-in user info
-    az_info=$(az ad signed-in-user show 2>&1)
-    # Extract user display name from JSON output
-    azure_logged_in_user=$(echo "$az_info" | jq -r '.displayName' 2>/dev/null)
+    local loginUsingServicePrincipal
 
-    # Check if signed in as service principal
-    if [[ "$az_info" == *"/me"* ]]; then
-        return 0 
+    # they want to login to Azure, are they already there?
+    if verify_azure_login; then
+        return 0
     fi
 
-    # Prompt user to log in if not logged in
-    if [[ -z "$azure_logged_in_user" ]]; then
+    # the user isn't logged in.  check the local config to see if they want to use a service principal to login
+    # value=$(jq -r '.loginUsingServicePrincipal' localStartupOptions.json)
+    loginUsingServicePrincipal=$(get_setting 'loginUsingServicePrincipal')
+    case $loginUsingServicePrincipal in
+    null | "")
+        read -r -p \
+            "$GREEN""Would you like to login with a Service Principal [s], with your user creds [uU]? ""$NORMAL" \
+            login_option
+
+        if [[ "$login_option" == "u" ]]; then # since the default is S
+            loginUsingServicePrincipal=false
+        else
+            loginUsingServicePrincipal=true
+        fi
+        write_setting "loginUsingServicePrincipal" "$loginUsingServicePrincipal"
+        ;;
+    true | false) ;;
+        # nothing to do here, we got a valid setting back
+    *)
+        echo_error "Unexpected value for 'loginUsingServicePrincipal' in localStartupOptions.json"
+        echo_error "The unexpected value is: $loginUsingServicePrincipal"
+        echo_error "Deleting the setting.  Close this terminal and open a new one to retry."
+        write_setting "localStartupOptions.json", ""
+        return 1
+        ;;
+    esac
+
+    if [[ $loginUsingServicePrincipal == true ]]; then
+        azure_service_principal_login_and_secrets
+    else
         read -r -p "You are not logged into Azure. Press Enter to log in. A browser will launch"
         if ! az login --allow-no-subscriptions 1>/dev/null; then
             echo_error "Error: Failed to log in to Azure. Manually log in to Azure and try again."
             return 1
         fi
-
-        # Extract user display name from JSON output
-        az_info=$(az ad signed-in-user show 2>/dev/null)
-        azure_logged_in_user=$(echo "$az_info" | jq -r '.displayName' 2>/dev/null)
-        if [[ -z "$azure_logged_in_user" ]]; then
-            echo_error "Error: Failed to extract user display name after logging in to Azure."
-            return 1
-        fi
     fi
 
-    echo_info "Logged in to Azure as $azure_logged_in_user"
-    export AZURE_LOGGED_IN_USER="$azure_logged_in_user"
+    if ! verify_azure_login; then
+        echo_error "Error logging in to azure.  Manually login or try again."
+        echo_error "This can happen if you are trying to use user credentials while running in a VS Code Browser"
+        echo_error "Login with a service principal instead."
+    fi
     return 0
 }
 ```
 
 > *load_local_env()*  
 This function loads the local secrets and lets the user know where those secrets are stored.  Echoing the location is a key part of the scenario as it "guides" the developer to the right spot if they need to update or add additional environment variables.  The shellcheck comment below is a way of turning off a shell linter warning that it can't follow the link to check the referenced file.  As we check it separately, it isn't needed here.  the LOCAL_ENV environment variable is set in the local.env file by the *onPostCreate.sh*
-> Note that the line ```"source "$PWD/.devcontainer/local.env"``` is not ```source $LOCAL_ENV``` because \$LOCAL_ENV is set by executing this line...so $LOCAL_ENV is "" until after this line.
+> Note that the $LOCAL_ENV is declared at the top of this script as a hardcoded path.
 
 ```sh
 function load_local_env() {
-    # the following line disables the "follow the link linting", which we don't need here
-
+     # the following line disables the "follow the link linting", which we don't need here
     # shellcheck source=/dev/null
-     source "$PWD/.devcontainer/local.env"
-    # a this is a config file in json format where we use jq to find/store settings
-    STARTUP_OPTIONS_FILE="$PWD/.devcontainer/.localStartupOptions.json"
+    source "$LOCAL_ENV"
 
-    # tell the dev where the options are everytime a terminal starts so that it is obvious where
-    # to change a setting
-    echo_info "Local secrets file is $LOCAL_ENV."
-    echo_info "Set environement variables there that you want to use locally."
+    # tell the dev where the options are everytime a terminal starts so that it is obvious where to change a setting
+    echo_info "Local secrets file is $LOCAL_ENV.  Set environement variables there that you want to use locally."
 
 }
 ```
@@ -392,10 +586,31 @@ function login_to_github() {
     fi
 }
 ```
+>function *fix_git_ignore*   
+Makes sure the gitignore has the line to ignore *local*.* files.  It will create the .gitignore file it if doesn't exist, and will add the line if it isn't there.
+```sh
+
+function fix_git_ignore() {
+    # Check if .gitignore file exists in current directory
+    if [[ ! -f .gitignore ]]; then
+        touch .gitignore
+    fi
+
+    # Check if "*local*.*" pattern is already in .gitignore file
+    if ! grep -qF "*local*.*" .gitignore; then
+        cat <<EOF >>.gitignore
+# anything containing the word local. used to keep local.env and other local
+# files from being checked in, as they often contain secrets
+*local*.*
+EOF
+    fi
+}
+```
 
 >This part of the script just calls the functions in the proper order.  Call load_local_env fist because in Codespaces, the shell starts with the secrets set so this makes the initial conditions of the script the same if the dev is running in Codespaces or in a local docker container
 
 ```sh
+fix_git_ignore
 load_local_env
 login_to_github
 login_to_azure
@@ -438,6 +653,17 @@ function create_azure_service_principal() {
     echo "You must login to GitHub in order to create GitHub Codespace secrets"
     gh auth login --scopes user,repo,codespace:secrets
 
+```
+> secrets in Github Codespaces secrets are bound to repositories, so ask the user if the above repository is the one they intend to use
+
+```sh
+ echo -n "The repo the secret will be available in is $GITHUB_REPO.  Is this correct? [yYn]: "
+    read -r -n 1 answer
+    echo ""
+    if [[ ! $answer =~ ^[yY]?$ ]]; then
+       echo -n "Repo name in the form of owner/repo: " 
+       read -r GITHUB_REPO
+    fi
 ```
 
 >Prompt the user for the name for the service principal, the subscription and the tenant id.  To make it easier for the user, print out a table of all subscriptions they have access to, along with the associated names and ids.
@@ -494,7 +720,14 @@ function create_azure_service_principal() {
         return 1
     fi
 ```
+> Show the information about the Service Principal in case the user is logging in to Azure with a SP outside of Codespaces.
 
+```sh
+echo "Service Principal:"
+    echo "  App ID:    $app_id"
+    echo "  Password:  $password"
+    echo "  Tenant ID: $tenant_id"
+```
 >If we get here, we have the information we need, store the secrets as user secrets for the repository that is set at the top of the file.
 
 ```sh
@@ -526,7 +759,7 @@ create_azure_service_principal
 
 ```
 
-When the user goes back to VS Code and reloads the Codespace instance, VS Code and the Codespace extension will automatically set environment variables for the secrets.  the *onTerminalStart.sh* script will use these environment variables to login to azure automatically.  
+When the user goes back to VS Code and reloads the Codespace instance, VS Code and the Codespace extension will automatically set environment variables for the secrets.  the *onTerminalStart.sh* script will use these environment variables to login to azure automatically.  If the user is not running in Codespaces, the *onTerminalStart.sh* script will ask for each piece of information about the SP and store it in the *local.env* file.
 
 ## Wrap-up
 
