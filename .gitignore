@@ -1,2 +1,3 @@
-#anything containing the word local
+# anything containing the word local. used to keep local.env and other local
+# files from being checked in, as they often contain secrets
 *local*.*

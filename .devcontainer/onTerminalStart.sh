@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # This script is run every time a terminal is started. It does the following:
 # 1. Load the local environment from local.env
 # 2. Login to GitHub with the proper scope
@@ -10,7 +9,8 @@ RED=$(tput setaf 1)
 NORMAL=$(tput sgr0)
 GREEN=$(tput setaf 2)
 YELLOW=$(tput setaf 3)
-
+LOCAL_ENV="$PWD/.devcontainer/local.env"
+export LOCAL_ENV
 # See https://www.shellcheck.net/wiki/SC2155 for why this is declared this way
 readonly RED
 readonly NORMAL
@@ -57,10 +57,50 @@ function write_setting() {
         echo "{\"$key\": \"$value\"}" >"$tmp"
     fi
     mv "$tmp" "$STARTUP_OPTIONS_FILE"
+}
+# when using a SP login not in codespaces, we need to save appId, TenantId, and Password to use login with a Azure
+# Service Principle.  This function prompts for each and then either updates or adds the keys the the local.env file.
+function save_sp_secrets_locally() {
+    read -r -p "What is the AppId? " AZ_SP_APP_ID
+    export AZ_SP_APP_ID
+    # Replace or add the AZ_SP_APP_ID variable in $LOCAL_ENV
+    if grep -q "^AZ_SP_APP_ID=" "$LOCAL_ENV"; then
+        sed -i "s|^AZ_SP_APP_ID=.*|AZ_SP_APP_ID=\"$AZ_SP_APP_ID\"|" "$LOCAL_ENV"
+    else
+        cat << EOF >> "$LOCAL_ENV"
+export AZ_SP_APP_ID
+AZ_SP_APP_ID=$AZ_SP_APP_ID
+EOF
+
+    fi
+    read -r -p "What is the Password? " AZ_SP_PASSWORD
+    export AZ_SP_PASSWORD
+    # Replace or add the AZ_SP_PASSWORD variable in $LOCAL_ENV
+    if grep -q "^AZ_SP_PASSWORD=" "$LOCAL_ENV"; then
+        sed -i "s|^AZ_SP_PASSWORD=.*|AZ_SP_PASSWORD=\"$AZ_SP_PASSWORD\"|" "$LOCAL_ENV"
+    else
+       cat << EOF >> "$LOCAL_ENV"
+export AZ_SP_PASSWORD
+AZ_SP_PASSWORD=$AZ_SP_PASSWORD
+EOF
+
+    fi
+
+    read -r -p "What is the TenantId? " AZ_SP_TENANT_ID
+    export AZ_SP_TENANT_ID
+    # Replace or add the AZ_SP_TENANT_ID variable in $LOCAL_ENV
+    if grep -q "^AZ_SP_TENANT_ID=" "$LOCAL_ENV"; then
+        sed -i "s|^AZ_SP_TENANT_ID=.*|AZ_SP_TENANT_ID=\"$AZ_SP_TENANT_ID\"|" "$LOCAL_ENV"
+    else
+        cat << EOF >> "$LOCAL_ENV"
+export AZ_SP_TENANT_ID
+AZ_SP_TENANT_ID=$AZ_SP_TENANT_ID
+EOF
+
+    fi
 
 }
 
-# called when running in Codespaces
 # this gives instructions on how to create a service principal and then collects information from the user needed to
 # login using a azure service principal.  the function will also store the needed information as code spaces secrets
 # so that when the user runs in codespaces (or reattach's) then the azure login will work.
@@ -81,12 +121,13 @@ function azure_service_principal_login_and_secrets() {
     fi
     # if any of those value are empty, then we tell the user to rerun the script
     # in this context, we have the repo that we are running in, so we update the Repo in the script
-    sed -i "s|^GITHUB_REPO=|c\GITHUB_REPO=\"$repo|" "$script"
+    sed -i "s|^GITHUB_REPO=.*|GITHUB_REPO=\"$repo\"|" "$script"
 
     cat <<EOF
-You are not logged into Azure and you are running in a Codespace. To reliably login to Azure when running in a browser,
-you need to login with an Azure Service Principal. This branch has a script (create-azure-service-principal.sh)
-that will create a service principal. However, you must be logged into Azure to run it.
+To reliably login to Azure when running in a browser, you need to login with an Azure Service Principal. This branch 
+has a script (create-azure-service-principal.sh) that will create a service principal. However, you must be logged into 
+Azure to run it.
+
 To do so, follow these instructions:
     1. Go to https://ms.portal.azure.com
     2. Start cloud shell. Make sure it is a "bash" shell
@@ -94,9 +135,21 @@ To do so, follow these instructions:
        and paste it into the Azure Cloud Shell. This will collect and store secrets in your GitHub account that will be 
        used to login to Azure when running in CodeSpace
     4. Come back to this terminal and reconnect to codespaces when you are prompted.
+
+If you are running in Codespaces, you will be prompted to reconnect to the Codespace and the environment variables will
+automatically be set to allow onTerminalStart.sh to log into Azure using the SP. If you are not in Codespaces, these 
+settings are saved in local.env.  
+
+This script will prompt you for the values and you can copy and paste them from your Azure Cloud Shell.
+
 EOF
 
     read -n 1 -s -r -p "Hit any key to continue: "
+    echo ""
+    # if we are not running in Codespaces, we need to store the secrets in the local.env file
+    if [[ -z $CODESPACES ]]; then
+        save_sp_secrets_locally
+    fi
 
     # login with the information provided to make sure it works
     login_info=$(az login --service-principal -u "$AZ_SP_APP_ID" -p "$AZ_SP_PASSWORD" \
@@ -130,7 +183,8 @@ function verify_azure_login() {
 
     # Check if signed in as service principal
     if [[ "$az_info" == *"/me"* ]]; then
-        echo_info "Logged in as Service Principle ID $AZ_SP_APP_ID TenantId: $AZ_SP_TENANT_ID"
+        az_info=$(az ad sp show --id "$AZ_SP_APP_ID")
+        echo_info "Logged in as Service Principle Name: $(echo "$az_info" | jq .displayName)"
         return 0
     fi
     # Extract user display name from JSON output
@@ -146,15 +200,9 @@ function verify_azure_login() {
 # browser client) or with User Creds.  The user is asked their preference, which is stored in localStartupOptions
 function login_to_azure() {
     # Set up variables
-    local az_info
-    local azure_logged_in_user
-    local loginUsingServicePrincipal
-    local login_to_azure
 
-    login_to_azure=$(get_setting "loginToAzure")
-    if [[ "$login_to_azure" == false ]]; then # this can be true, null, or false
-        return 0
-    fi
+    local loginUsingServicePrincipal
+
     # they want to login to Azure, are they already there?
     if verify_azure_login; then
         return 0
@@ -163,24 +211,29 @@ function login_to_azure() {
     # the user isn't logged in.  check the local config to see if they want to use a service principal to login
     # value=$(jq -r '.loginUsingServicePrincipal' localStartupOptions.json)
     loginUsingServicePrincipal=$(get_setting 'loginUsingServicePrincipal')
-    if [[ "$loginUsingServicePrincipal" == "null" ]]; then # the setting doesn't exist - ask the user
-        echo_info "Would you like to login with a Service Principal [s], with your user creds [uU], or [n] Not at all?"
-        read -r -p "" login_option
-        if [[ "$login_option" == "n" ]]; then
-            login_to_azure=false
-            return 0
-        fi
+    case $loginUsingServicePrincipal in
+    null | "")
+        read -r -p \
+            "$GREEN""Would you like to login with a Service Principal [s], with your user creds [uU]? ""$NORMAL" \
+            login_option
+
         if [[ "$login_option" == "u" ]]; then # since the default is S
             loginUsingServicePrincipal=false
-            login_to_azure=true
         else
             loginUsingServicePrincipal=true
-            login_to_azure=true
         fi
-        # save it to the file -- note the way this has to be done...
         write_setting "loginUsingServicePrincipal" "$loginUsingServicePrincipal"
-        write_setting "loginToAzure" "$login_to_azure"
-    fi
+        ;;
+    true | false) ;;
+        # nothing to do here, we got a valid setting back
+    *)
+        echo_error "Unexpected value for 'loginUsingServicePrincipal' in localStartupOptions.json"
+        echo_error "The unexpected value is: $loginUsingServicePrincipal"
+        echo_error "Deleting the setting.  Close this terminal and open a new one to retry."
+        write_setting "localStartupOptions.json", ""
+        return 1
+        ;;
+    esac
 
     if [[ $loginUsingServicePrincipal == true ]]; then
         azure_service_principal_login_and_secrets
@@ -192,8 +245,10 @@ function login_to_azure() {
         fi
     fi
 
-    if verify_azure_login; then
+    if ! verify_azure_login; then
         echo_error "Error logging in to azure.  Manually login or try again."
+        echo_error "This can happen if you are trying to use user credentials while running in a VS Code Browser"
+        echo_error "Login with a service principal instead."
     fi
     return 0
 }
@@ -201,10 +256,10 @@ function login_to_azure() {
 # simply loads the local secret file to source the environment variables.  this
 # file is created in on-create.sh should always be here
 function load_local_env() {
-    # the following line disables the "follow the link linting", which we don't need here
 
+    # the following line disables the "follow the link linting", which we don't need here
     # shellcheck source=/dev/null
-    source "$PWD/.devcontainer/local.env"
+    source "$LOCAL_ENV"
 
     # tell the dev where the options are everytime a terminal starts so that it is obvious where to change a setting
     echo_info "Local secrets file is $LOCAL_ENV.  Set environement variables there that you want to use locally."
@@ -268,34 +323,11 @@ function setup_secrets() {
     return 0
 }
 
-# see if the user is logged into GitHub and if not, log them in.
-# it is possible that the user is only using GitLab, but the source
-# is in GitHub, so they should have a GitHub account and be logged in
+# see if the user is logged into GitHub and if not, log them in. this scenario has us logging into both
+# GitHub and Gitlab.  If either one is optional, this is where you'd check the localStartupOptions.json
+# and ask the user if they wanted to login to GitHub.
 function login_to_github() {
 
-    #check our local settings to see if the user wants to login to GitHub
-    local loginToGitHub
-    loginToGitHub=$(get_setting "loginToGitHub")
-    case $loginToGitHub in
-    false)
-        return 0
-        ;;
-    null) # ask user what they want to do
-        read -r -p "Would you like to login GitHub? [y/N] " answer
-        # this regular expression checks for upper or lower case Y
-        if [[ "$answer" =~ ^[Yy]$ ]]; then
-            loginToGitHub=true
-            write_setting "loginToGitHub" true
-        else
-            loginToGitHub=false
-            write_setting "loginToGitHub" false
-            return 1
-        fi
-        ;;
-    *) ;;
-        # treat as true
-    esac
-  
     export GH_AUTH_STATUS
     GH_AUTH_STATUS=$(gh auth status 2>&1 >/dev/null)
 
@@ -311,9 +343,10 @@ function login_to_github() {
     fi
 
     # find the number of secrets to test if we have the write scopes for our github login
+    # if they are not logged in, this fails and SECRET_COUNT is empty
     SECRET_COUNT=$(gh api -H "Accept: application/vnd.github+json" /user/codespaces/secrets | jq -r .total_count)
 
-    # if we don't have the scopes we need, we must update them
+    # without secrets, the SECRET_COUNT is 0 if they are logged in with the right permissions. so if it is empty...
     if [[ -z $SECRET_COUNT ]] && [[ $USER_LOGGED_IN == true ]]; then
         echo_warning "Refreshing GitHub Token to request codespace:secrets scope"
         gh auth refresh --scopes user,repo,codespace:secrets
@@ -338,6 +371,24 @@ function login_to_github() {
         echo_info "$GITHUB_INFO"
     fi
 }
+# make sure the gitignore has the line to ignore *local*.* files
+function fix_git_ignore {
+    # Check if .gitignore file exists in current directory
+    if [[ ! -f .gitignore ]]; then
+        touch .gitignore
+    fi
+
+    # Check if "*local*.*" pattern is already in .gitignore file
+    if ! grep -qF "*local*.*" .gitignore; then
+        cat <<EOF >>.gitignore
+# anything containing the word local. used to keep local.env and other local
+# files from being checked in, as they often contain secrets
+*local*.*
+EOF
+    fi
+}
+
+fix_git_ignore
 # call load_local_env fist because in Codespaces, the shell starts with the secrets set so this makes the
 # initial conditions of the script the same if the dev is running in codespace or in a local docker container
 load_local_env
