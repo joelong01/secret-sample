@@ -1,13 +1,14 @@
 #shellcheck disable=SC2148
 #shellcheck disable=SC2181
 
-# we need the repo below -- this repo will be updated by the startup.sh 
-# file to contain the repo that startup.sh is running in
-GITHUB_REPO=retaildevcrews/coral-cli-go
-# Instructions:  Copy and paste this function (starting with the "function create_azure_service_principal() {" line all
+# we need the repo below -- this repo will be updated by the onTerminalStart.sh
+# file to contain the repo that onTerminalStart.sh is running in
+GITHUB_REPO="joelong01/secret-sample"
+
+# Instructions:  Copy and paste this function (starting with the 'function create_azure_service_principal' line all
 # the way to the end of the file) into Azure Cloud Shell (or any interactive unix terminal where you can login to azure)
-# and then call the function by running "create_azure_service_principal" (no quotes).  Then enter the information from 
-# the output of the function to the prompt from startup.sh for the coralcli project
+# and then call the function by running "create_azure_service_principal" (no quotes).  Then enter the information from
+# the output of the function to the prompt from onTerminalStart.sh for the coralcli project
 function create_azure_service_principal() {
 
     # make sure the user is logged into Azure
@@ -19,7 +20,13 @@ function create_azure_service_principal() {
 
     echo "You must login to GitHub in order to create GitHub Codespace secrets"
     gh auth login --scopes user,repo,codespace:secrets
-
+    echo -n "The repo the secret will be available in is $GITHUB_REPO.  Is this correct? [yYn]: "
+    read -r -n 1 answer
+    echo ""
+    if [[ ! $answer =~ ^[yY]?$ ]]; then
+       echo -n "Repo name in the form of owner/repo: " 
+       read -r GITHUB_REPO
+    fi
     echo -n "Name of the service principal: "
     read -r -p "" sp_name
     echo "These are the subscriptions the logged in user has access to: "
@@ -47,8 +54,6 @@ function create_azure_service_principal() {
     app_id=$(echo "$output" | jq -r .appId)
     password=$(echo "$output" | jq -r .password)
 
-  
-
     if [[ $output == *"WARNING"* ]]; then
         echo "$output"
         # don't return on the warning as it might just be "don't share your secrets warning" or the like
@@ -65,19 +70,24 @@ function create_azure_service_principal() {
         echo "  Tenant ID: $tenant_id"
         return 1
     fi
+
+    echo "Service Principal:"
+    echo "  App ID:    $app_id"
+    echo "  Password:  $password"
+    echo "  Tenant ID: $tenant_id"
+
     # we have non empty values -- store them in GH user secrets
     gh secret set AZ_SP_APP_ID --user --repos "$GITHUB_REPO" --body "$app_id"
     gh secret set AZ_SP_PASSWORD --user --repos "$GITHUB_REPO" --body "$password"
     gh secret set AZ_SP_TENANT_ID --user --repos "$GITHUB_REPO" --body "$tenant_id"
 
-   cat <<EOF
+    cat <<EOF
 Go back to VS Code. You should have a toast popup that says "Your Codespace secrets have changed."
 Click on "Reload to Apply" and you should be automatically logged into Azure. If not, go to the User Settings of your
 GitHub account and manually set the AZ_SP_APP_ID, AZ_SP_PASSWORD, AZ_SP_TENANT_ID secrets.
 EOF
 
 }
-
 
 clear
 echo "Creating a Service Principal"
