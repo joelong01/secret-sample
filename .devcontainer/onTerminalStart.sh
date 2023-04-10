@@ -27,8 +27,8 @@ function echo_info() {
 }
 
 # a this is a config file in json format where we use jq to find/store settings
-readonly REQUIRED_REPO_SECRETS="$PWD/.devcontainer/devsecrets.json"
-readonly LOCAL_SECRETS_SET_FILE="$HOME/devsecrets.sh"
+readonly REQUIRED_REPO_SECRETS="$PWD/.devcontainer/requiredRepoSecrets.json"
+readonly LOCAL_SECRETS_SET_FILE="$HOME/.localIndividualDevSecrets.sh"
 USE_CODESPACES_SECRETS=$(jq -r '.options.useGitHubUserSecrets' "$REQUIRED_REPO_SECRETS")
 
 #
@@ -75,8 +75,10 @@ fi
         key=$(echo "$secret" | jq -r .environmentVariable)
         script=$(echo "$secret" | jq -r .shellscript)
         desc=$(echo "$secret" | jq -r .description)
-        #this picks the value from the key=value .env file
-        val=$(sed -n 's/^'"$key"'=\(.*\)$/\1/p' "$LOCAL_SECRETS_SET_FILE") 
+        if [[ -f "$LOCAL_SECRETS_SET_FILE" ]]; then
+            #this picks the value from the key=value .env file
+            val=$(sed -n 's/^'"$key"'=\(.*\)$/\1/p' "$LOCAL_SECRETS_SET_FILE")
+        fi
 
         if [[ -z "$val" ]]; then            #is this a new secret?
             if [[ -n "$script" ]]; then     # is there a script?
@@ -109,7 +111,8 @@ fi
             # get the repos that the current secret is valid for - we then add the current repo to it.  GitHub
             # will overwrite the repos with the gh secret set comand.  I couldn't find any way except calling
             # the GH REST API to get the repos for a secret
-            local repos; local url
+            local repos
+            local url
 
             url="https://api.github.com/user/codespaces/secrets/$key/repositories"
             # this curl syntax will allow us to get the resonse and the response code
