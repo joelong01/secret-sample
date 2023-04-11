@@ -31,12 +31,162 @@ readonly REQUIRED_REPO_SECRETS="$PWD/.devcontainer/requiredRepoSecrets.json"
 readonly LOCAL_SECRETS_SET_FILE="$HOME/.localIndividualDevSecrets.sh"
 USE_CODESPACES_SECRETS=$(jq -r '.options.useGitHubUserSecrets' "$REQUIRED_REPO_SECRETS")
 
+# collect_secrets function
+#
+#   $1 contains a JSON array
+#   1.	iterate through the array
+#   2.	check a file called $ LOCAL_SECRETS_SET_FILE to see if there is text in the form “KEY=VALUE”
+#       where KEY is the environment variable name (use sed for this)
+#           a.	if the value is set in the file, set an environment variable with this key and value
+#           b.	continue to the next array element
+#   3.	if the shellscript is not empty, it should "source" the script
+#   4.	if it is empty, it should prompt the user for the value using the description
+#   5.	it should set the environment variable to the value entered
+#   6.	if the script is called, the script will set the environment variable
+#
+function collect_secrets() {
+    # Parse the JSON input
+    local json_array # renamed $1: a json array of secrets (environmentVariable, description, and shellscript)
+    local length     # the length of the json array
+    json_array=$1
+    length=$(echo "$json_array" | jq '. | length')
+
+    # Iterate through the array
+    for ((i = 0; i < length; i++)); do
+        # Extract JSON properties
+        local environmentVariable # the name of the environment variable
+        local description
+        local shellscript # a shellscript that will provide information to the user to collect the needed value
+        environmentVariable=$(echo "$json_array" | jq -r ".[$i].environmentVariable")
+        description=$(echo "$json_array" | jq -r ".[$i].description")
+        shellscript=$(echo "$json_array" | jq -r ".[$i].shellscript")
+
+        # Check if the environment variable is set in the local secrets file
+        local secret_entry
+        secret_entry=$(grep "^$environmentVariable=" "$LOCAL_SECRETS_SET_FILE")
+
+        if [[ -n "$secret_entry" ]]; then
+            # Get the value from the secret_entry
+            local value
+            value=$(echo "$secret_entry" | cut -d'=' -f2)
+
+            # Set the environment variable with the key and value from the file
+            export "$environmentVariable=$value"
+        else
+            if [[ -n "$shellscript" ]]; then
+                # If shellscript is not empty, source it
+                #shellcheck disable=SC1090
+                source "$shellscript"
+            else
+                # If shellscript is empty, prompt the user for the value using the description
+                echo -n "$description: "
+                read -r value
+
+                # Set the environment variable to the value entered
+                export "$environmentVariable=$value"
+            fi
+        fi
+    done
+}
+
+# build_save_secrets_script function
+# this builds the script that is called by on_terminal_start.sh that sets the secrets
+# $1 contains a JSON array
+
+function build_save_secrets_script() {
+    local toWrite
+    toWrite="#!/bin/bash
+# if we are running in codespaces, we don't load the local environment
+if [[ \$CODESPACES == true ]]; then  
+  return 0
+fi
+"
+    local environmentVariable
+    local description
+    local val        # the value of the environment variable
+    local json_array # renamed $1: a json array of secrets (environmentVariable, description, and shellscript)
+    local length     # the length of the json array
+    json_array=$1
+    length=$(echo "$json_array" | jq '. | length')
+    # Iterate through the array
+    for ((i = 0; i < length; i++)); do
+        environmentVariable=$(echo "$json_array" | jq -r ".[$i].environmentVariable")
+        val="${!environmentVariable}"
+        description=$(echo "$json_array" | jq -r ".[$i].description")
+        toWrite+="# $description\nexport $environmentVariable\n$environmentVariable=$val\n"
+    done
+    echo -e "$toWrite" >"$LOCAL_SECRETS_SET_FILE"
+    # we don't have to worry about sourcing this when in CodeSpaces as the script will exit if
+    # CODESPACES == true.  the shellcheck disable is there to tell the linter to not worry about
+    # linting the script that we are sourcing
+    # shellcheck disable=1090
+    source "$LOCAL_SECRETS_SET_FILE"
+}
+
+# function save_in_codespaces()
+# $1 contains a JSON array of secrets
+# go through that array and save the secret in Codespaces User Secrets
+# makes sure that if the secret already exists *add* the current repo to the repo list instead of just updating it
+# which in current GitHub, resets the secret to be valid in only the specified repos
+# assumes that every secret has an environment variable set with the correct value
+function save_in_codespaces() {
+
+    local repos               # the repos the secret is available in
+    local url                 # the url to get the secret's repos
+    local environmentVariable # the name of the secret
+    local val                 # the secrets value
+    local gh_pat              # the GitHub PAT - needed to call the REST api
+    local current_repo        # the repo of the current project
+    local json_array          # renamed $1: a json array of secrets (environmentVariable, description, and shellscript)
+    local length              # the length of the json array
+
+    json_array=$1
+    length=$(echo "$json_array" | jq '. | length')
+    current_repo=$(git config --get remote.origin.url | sed -e 's|^https://github.com/||' | sed -e 's|.git$||')
+
+    gh_pat=$(gh auth token)
+    length=$(echo "$json_array" | jq '. | length')
+    for ((i = 0; i < length; i++)); do
+        environmentVariable=$(echo "$json_array" | jq -r ".[$i].environmentVariable")
+        val="${!environmentVariable}" # we assume that this has been set before this function is called
+        url="https://api.github.com/user/codespaces/secrets/$environmentVariable/repositories"
+        # this curl syntax will allow us to get the resonse and the response code
+        response=$(curl -s -w "%{http_code}" -H "Authorization: Bearer $gh_pat" "$url")
+        response_code=${response: -3}
+        response=${response:0:${#response}-3}
+
+        # if the secret is not set, we'll get a 404 back.  then the repo is just the current repo
+        case $response_code in
+        "404")
+            repos="$current_repo"
+            ;;
+        "200")
+            # a 2xx indicates that the user secret already exists.  get the repos that the secret is valid in.
+            repos=$(echo "$response" | jq '.repositories[].full_name' | paste -sd ",")
+            # Check if current_repo already exists in repos, and if not then add it
+            # if you don't do this, the gh secret set api will give an error
+            if [[ $repos != *"$current_repo"* ]]; then
+                repos+=",\"$current_repo\""
+            fi
+            ;;
+        *)
+            echo_error "unknown error calling $url"
+            echo_error "Secret=$environmentVariable value=$val in repos=$repos"
+            ;;
+        esac
+
+        # set the secret -- we always do this as the value might have changed...we can't check the value
+        # using the current GH api.
+        gh secret set "$environmentVariable" --user --app codespaces --repos "$repos" --body "$val"
+    done
+}
+
 #
 #   load the devscrets.json file and for each secret specified do
 #   1. check if the value is known, if not prompt the user for the value
 #   2. reconstruct and overwrite the $LOCAL_SECRETS_SET_FILE
 #   3. source the $LOCAL_SECRETS_SET_FILE
-function buildEnvFile {
+function on_terminal_start {
 
     # check the last modified date of the env file file and if it is gt the last modified time of the config file
     # we have no work to do
@@ -50,103 +200,22 @@ function buildEnvFile {
         return 0
     fi
 
-    local secrets
-    local toWrite
-    local gh_pat
-    local repos
-    local current_repo
-    gh_pat=$(gh auth token) #needed if we set GH secrets
-    current_repo=$(git config --get remote.origin.url | sed -e 's|^https://github.com/||' | sed -e 's|.git$||')
+    # load the secrets file to get the array of secrets
+    local json_secrets_array # a json array of secrets loaded from the $REQUIRED_REPO_SECRETS file
 
-    toWrite="#!/bin/bash
-# if we are running in codespaces, we don't load the local environment
-if [[ \$CODESPACES == true ]]; then  
-  return 0
-fi
-"
+    json_secrets_array=$(jq '.secrets' "$REQUIRED_REPO_SECRETS")
 
-    readarray -t secrets <<<"$(jq -c -r '.secrets | .[]' "$REQUIRED_REPO_SECRETS")"
+    # iterate through the JSON and get values for each secret
+    # when this returns each secret will have an environment variable set
+    collect_secrets "$json_secrets_array"
 
-    for secret in "${secrets[@]}"; do
-        local key
-        local val
-        local desc
+    # build, save, and source the local secrets script
+    build_save_secrets_script "$json_secrets_array"
 
-        key=$(echo "$secret" | jq -r .environmentVariable)
-        script=$(echo "$secret" | jq -r .shellscript)
-        desc=$(echo "$secret" | jq -r .description)
-        if [[ -f "$LOCAL_SECRETS_SET_FILE" ]]; then
-            #this picks the value from the key=value .env file
-            val=$(sed -n 's/^'"$key"'=\(.*\)$/\1/p' "$LOCAL_SECRETS_SET_FILE")
-        fi
-
-        if [[ -z "$val" ]]; then            #is this a new secret?
-            if [[ -n "$script" ]]; then     # is there a script?
-                if [[ -f "$script" ]]; then # does the script exist?
-                    # shellcheck disable=1090
-                    source "$script"
-                    val="${!key}" # in this scheme, the scripte exports the environment variable we are looking for
-                else
-                    echo_error "$script is set in $REQUIRED_REPO_SECRETS but can't be found. Bad path?"
-                fi
-            else # no script
-                echo -n "enter $desc:"
-                read -r val
-            fi
-        fi
-        # we should have gotten the value from one of 3 places
-        # 1. the $LOCAL_SECRETS_SET_FILE 2. a script 3. prompting the user
-        if [[ -z "$val" ]]; then
-            echo_warning "the value for $key is being set to empty"
-        fi
-
-        if [[ $val != \"*\" ]]; then
-            val=\""$val"\"
-        fi
-
-        toWrite+="# $desc\nexport $key\n$key=$val\n"
-
-        # codespaces secrets
-        if [[ "$USE_CODESPACES_SECRETS" == "true" ]]; then
-            # get the repos that the current secret is valid for - we then add the current repo to it.  GitHub
-            # will overwrite the repos with the gh secret set comand.  I couldn't find any way except calling
-            # the GH REST API to get the repos for a secret
-            local repos
-            local url
-
-            url="https://api.github.com/user/codespaces/secrets/$key/repositories"
-            # this curl syntax will allow us to get the resonse and the response code
-            response=$(curl -s -w "%{http_code}" -H "Authorization: Bearer $gh_pat" "$url")
-            response_code=${response: -3}
-            response=${response:0:${#response}-3}
-
-            # if the secret is not set, we'll get a 404 back.  then the repo is just the current repo
-            if [[ $response_code == "404" ]]; then
-                repos=$current_repo
-            elif [[ $response_code == "200" ]]; then
-                # a 2xx indicates that the user secret already exists.  get the repos that the secret is valid in.
-                repos=$(echo "$response" | jq '.repositories[].full_name' | paste -sd ",")
-                # Check if current_repo already exists in repos, and if not then add it
-                # if you don't do this, the gh secret set api will give an error
-                if [[ $repos != *"$current_repo"* ]]; then
-                    repos+=",\"$current_repo\""
-                fi
-            else
-                echo_error "unknown error calling $url"
-
-            fi
-
-            # set the secret -- we always do this as the value might have changed
-            gh secret set "$key" --user --app codespaces --repos "$repos" --body "$val"
-        fi
-
-    done
-    # overwrite the file with the new data
-    echo -e "$toWrite" >"$LOCAL_SECRETS_SET_FILE"
-    echo_info "created new $LOCAL_SECRETS_SET_FILE"
-    if [[ $USE_CODESPACES_SECRETS != "true" ]]; then #don't source the file when using codespaces
-        # shellcheck disable=1090
-        source "$LOCAL_SECRETS_SET_FILE"
+    # if the user wants to use codespaces secrets, iterate through the json array
+    # and store the secret in CodeSpaces user secrets, adding the current repo
+    if [[ "$USE_CODESPACES_SECRETS" == "true" ]]; then
+        save_in_codespaces "$json_secrets_array"
     fi
 
 }
@@ -205,4 +274,4 @@ function login_to_github() {
 if [[ $USE_CODESPACES_SECRETS == "true" ]]; then
     login_to_github
 fi
-buildEnvFile
+on_terminal_start
