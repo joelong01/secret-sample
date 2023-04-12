@@ -314,7 +314,7 @@ function show_help() {
     echo "OPTIONS:"
     echo "  help        Show this help message"
     echo "  update      parses requiredRepoSecrets.json and updates $LOCAL_SECRETS_SET_FILE"
-    echo "  setup       modifies the devcontainer.json to boostrap the system"
+    echo "  setup       modifies the devcontainer.json to bootstrap the system"
     echo "  reset       Resets $LOCAL_SECRETS_SET_FILE and runs update"
     echo ""
 }

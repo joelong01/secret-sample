@@ -8,20 +8,22 @@ This document is focused on ways for developers to configure secrets in their in
 
 The approach is to "declare" the secrets necessary to run the code in the repository be checking in a json file containing meta data about the secrets. The system is then configured such that the values for those secrets are collected and stored - either in the local container but outside of project scope, or in GitHub CodeSpaces User Secrets. By storing the secret values outside of project scope, the system protects against accidentally checking in those secret values.
 
+*Note that we are using "secrets" here, but the system will work with any environment variable that the repo's code needs.*
+
 GitHub Codespaces User Secrets can be optionally used to store the secrets, and when using CodeSpaces, the secrets are never stored on the client machine. The scenario for this example is a project that needs 2 secrets: a PAT for GitLab and a subscription id for Azure.  The *use* of the secrets is not part of the example.  The dev environment must support running both a docker container and GitHub CodeSpaces.
 ## Setup instructions
-To use devsecrets, copy the **devsecrets.sh** script to the .devcontainer directory of your project.  Then run
+To use devsecrets, copy the **devsecrets.sh** script to the .devcontainer directory of your project.  Then from the .devcontainer directory run
 
 ```shell
-    chmod +x devsecrets.sh
-    devsecrets.sh setup
-```
+    chmod +x ./devsecrets.sh
+    ./devsecrets.sh setup
 
-This will create a **requiredRepoSecrets.json** file for you.  Enter your secret information into the json in the format defined below and then run 
+```
+This will create a **required-secrets.json** file for you.  Enter your secret information into the json in the format defined below and then run 
 ```shell
     devsecrets.sh update
 ```
-Alternatively, open another shell after you edit your json - the command ```devsecrets.sh update``` is run from the **.bashrc** or the **.zshrc**
+Alternatively, open another shell after you edit your json - the command ```devsecrets.sh update``` is run from the **.bashrc** or the **.zshrc**, so it will run every time a terminal starts.
 
 If the file is checked into the repo after setup has been run, then the developer does nothing -- the creation of the container will drive the scripts to do the right thing.
 
@@ -35,9 +37,9 @@ If the file is checked into the repo after setup has been run, then the develope
 6. Self correcting: if a developer accidentally breaks something, the system should fix it as much as possible.
 
 ## Design
-The approach is to declare the secrets necessary to run the code in the repository be checking in a json file containing meta data about the secrets in a file named *.devcontainer/requiredRepoSecrets.json*.
+The approach is to declare the secrets necessary to run the code in the repository be checking in a json file containing meta data about the secrets in a file named *.devcontainer/required-secrets.json*.
 
-The example json is checked in to [requiredRepoSecrets.json](.devcontainer/requiredRepoSecrets.json), which looks like
+The example json is checked in to [required-secrets.json](.devcontainer/required-secrets.json), which looks like
 
 ```json
 {
@@ -90,16 +92,22 @@ export GITLAB_TOKEN
 GITLAB_TOKEN=glpat-fnpk4865j8urssQR27D6i
 # the AppId for the Azure Service Principle for the Secret Sample App
 export SECRET_SAMPLE_AZ_SP_APP_ID
-SECRET_SAMPLE_AZ_SP_APP_ID=a9ad40f8-3eac-4d5f-b004-7af6bd454ef8
+SECRET_SAMPLE_AZ_SP_APP_ID="a9ad40f8-3eac-4d5f-b004-7af6bd454ef8"
 # the password for the Azure Service Principle for the Secret Sample App
 export SECRET_SAMPLE_AZ_SP_PASSWORD
-SECRET_SAMPLE_AZ_SP_PASSWORD=7J_2rMvPk8aMjeAW_dNYMA1RpKQbdAzNvzNtJ-9X
+SECRET_SAMPLE_AZ_SP_PASSWORD="7J_2rMvPk8aMjeAW_dNYMA1RpKQbdAzNvzNtJ-9X"
 # the AppId for the Azure Service Principle for the Secret Sample App
 export SECRET_SAMPLE_TENANT_ID
-SECRET_SAMPLE_TENANT_ID=4330d04b-58af-4e84-9b79-35c253be5163
+SECRET_SAMPLE_TENANT_ID="4330d04b-58af-4e84-9b79-35c253be5163"
 ```
 
+The way this works is the VS Code created file *.devcontainer/devcontainer.json* is modified to run ```devsecrets.sh setup``` when the container is finished building (using the "postCreateCommand": "./.devcontainer/devsecrets.sh setup")  The system runs scripts (*onPostCreat.sh* and *devsecrets.sh*) that interpret this json file to collect the secrets and store them outside of the project scope by updating *.bashrc* and *.zshrc* to source a *$HOME/.localIndividualDevSecrets.sh* which is created by *devsecrets.sh* based on the contents of *required-secrets.json*.  The code in the repo accesses the secrets via environment variables.
 
-
-The way this works is the VS Code created file *.devcontainer* is modified to run ```devsecrets.sh setup``` when the container is finished building (using the "postCreateCommand": "/bin/bash -i -c 'source ./.devcontainer/onPostCreate.sh'")  The system runs scripts (*onPostCreat.sh* and *devsecrets.sh*) that interpret this json file to collect the secrets and store them outside of the project scope by updating *.bashrc* and *.zshrc* to source a *$HOME/.localIndividualDevSecrets.sh* which is created by *devsecrets.sh* based on the contents of *requiredRepoSecrets.json*).  The code in the repo accesses the secrets via environment variables.
- 
+## Commands
+ **devscrets.sh** takes the following parameters:
+```shell
+  help        Show this help message
+  update      parses requiredRepoSecrets.json and updates $HOME/localIndividualDevSecrets.sh
+  setup       modifies the devcontainer.json to bootstrap the system
+  reset       Resets $HOME/.localIndividualDevSecrets.sh and runs update
+```
