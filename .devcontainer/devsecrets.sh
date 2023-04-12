@@ -27,7 +27,7 @@ function echo_info() {
 }
 
 # a this is a config file in json format where we use jq to find/store settings
-readonly REQUIRED_REPO_SECRETS="$PWD/.devcontainer/requiredRepoSecrets.json"
+readonly REQUIRED_REPO_SECRETS="$PWD/.devcontainer/required-secrets.json"
 readonly LOCAL_SECRETS_SET_FILE="$HOME/.localIndividualDevSecrets.sh"
 USE_CODESPACES_SECRETS=$(jq -r '.options.useGitHubUserSecrets' "$REQUIRED_REPO_SECRETS" 2>/dev/null)
 
@@ -70,7 +70,8 @@ function collect_secrets() {
         fi
         # Check if the environment variable is set in the local secrets file
         local secret_entry
-        secret_entry=$(grep "^$environmentVariable=" "$LOCAL_SECRETS_SET_FILE" 2>/dev/null)
+        secret_entry=$(grep "^$environmentVariable=" "$LOCAL_SECRETS_SET_FILE" | 
+                        sed 's/^.*=\(.*\)$/\1/; s/\\\([^"]\|$\)/\1/g; s/^"\(.*\)"$/\1/' 2>/dev/null)
 
         if [[ -n "$secret_entry" ]]; then
             # Get the value from the secret_entry
@@ -86,7 +87,7 @@ function collect_secrets() {
                 source "$shellscript"
             else
                 # If shellscript is empty, prompt the user for the value using the description
-                echo -n "$description: "
+                echo -n "Enter $description: "
                 read -r value
 
                 # Set the environment variable to the value entered
@@ -120,7 +121,7 @@ fi
         environmentVariable=$(echo "$json_array" | jq -r ".[$i].environmentVariable")
         val="${!environmentVariable}"
         description=$(echo "$json_array" | jq -r ".[$i].description")
-        toWrite+="# $description\nexport $environmentVariable\n$environmentVariable=$val\n"
+        toWrite+="# $description\nexport $environmentVariable\n$environmentVariable=\"$val\"\n"
     done
     echo -e "$toWrite" >"$LOCAL_SECRETS_SET_FILE"
     # we don't have to worry about sourcing this when in CodeSpaces as the script will exit if
@@ -290,6 +291,12 @@ function initial_setup() {
         # If it doesn't exist, append the line to the .bashrc file
         echo "${STARTUP_LINE}" >>"$HOME"/.bashrc
     fi
+    # Check if the startup line exists in the .zshrc file
+    if ! grep -q "${STARTUP_LINE}" "$HOME"/.zshrc; then
+        # If it doesn't exist, append the line to the .bashrc file
+        echo "${STARTUP_LINE}" >>"$HOME"/.zshrc
+    fi
+
     # if there isn't a json file, create a default one
     if [[ ! -f $REQUIRED_REPO_SECRETS ]]; then
         echo '{

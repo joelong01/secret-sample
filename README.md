@@ -10,9 +10,10 @@ The approach is to "declare" the secrets necessary to run the code in the reposi
 
 GitHub Codespaces User Secrets can be optionally used to store the secrets, and when using CodeSpaces, the secrets are never stored on the client machine. The scenario for this example is a project that needs 2 secrets: a PAT for GitLab and a subscription id for Azure.  The *use* of the secrets is not part of the example.  The dev environment must support running both a docker container and GitHub CodeSpaces.
 ## Setup instructions
-To use devsecrets, copy the **devsecrets.sh** script to the .devcontainer directory of your project.  The run
+To use devsecrets, copy the **devsecrets.sh** script to the .devcontainer directory of your project.  Then run
 
 ```shell
+    chmod +x devsecrets.sh
     devsecrets.sh setup
 ```
 
@@ -21,6 +22,9 @@ This will create a **requiredRepoSecrets.json** file for you.  Enter your secret
     devsecrets.sh update
 ```
 Alternatively, open another shell after you edit your json - the command ```devsecrets.sh update``` is run from the **.bashrc** or the **.zshrc**
+
+If the file is checked into the repo after setup has been run, then the developer does nothing -- the creation of the container will drive the scripts to do the right thing.
+
 ## Design Goals
 
 1. Ease of Use for Developers: The repository should be easy to clone and use, with configuration in one place and not requiring developers to go through a lengthy readme file. The *use* of the repo will guide the user to do the right thing without having to consult a readme file.
