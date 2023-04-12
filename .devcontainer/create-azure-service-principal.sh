@@ -1,31 +1,42 @@
+#!/bin/bash
 #shellcheck disable=SC2148
 #shellcheck disable=SC2181
-
-# we need the repo below -- this repo will be updated by the onTerminalStart.sh
-# file to contain the repo that onTerminalStart.sh is running in
-GITHUB_REPO="joelong01/secret-sample"
-
-# Instructions:  Copy and paste this function (starting with the 'function create_azure_service_principal' line all
-# the way to the end of the file) into Azure Cloud Shell (or any interactive unix terminal where you can login to azure)
-# and then call the function by running "create_azure_service_principal" (no quotes).  Then enter the information from
-# the output of the function to the prompt from onTerminalStart.sh for the coralcli project
+#
+#   guides the user to set 3 environment variables:
+#
+#       SECRET_SAMPLE_AZ_SP_APP_ID: the app id of a azure service principale
+#       SECRET_SAMPLE_AZ_SP_PASSWORD: the SP password
+#       SECRET_SAMPLE_TENANT_ID: the tenant for the SP
+#
+#   this can be done via copy and paste (the user specifies using an existing SP)
+#   or it will guide the user to create a new Service Principal and set these keys
+#   if all the keys are set, create_azure_service_principal() will not be called
 function create_azure_service_principal() {
 
-    # make sure the user is logged into Azure
+    echo -n "Would you like to create a new [Nn] Service Princpal or use an existing [e] one? "
+    read -r -p "" input
+
+    if [[ "$input" == "e" ]]; then
+        echo -n "AppId: "
+        read -r -p "" app_id
+        echo -n "Password: "
+        read -r -p "" password
+        echo -n "TenantId: "
+        read -r -p "" tenant_id
+        SECRET_SAMPLE_AZ_SP_APP_ID="$app_id"
+        SECRET_SAMPLE_AZ_SP_PASSWORD="$password"
+        SECRET_SAMPLE_TENANT_ID="$tenant_id"
+
+        export SECRET_SAMPLE_AZ_SP_APP_ID
+        export SECRET_SAMPLE_AZ_SP_PASSWORD
+        export SECRET_SAMPLE_TENANT_ID
+        return 0
+    fi
+    # since the user want's a new one, make sure the user is logged into Azure
     az account show >/dev/null 2>&1
     if [[ $? -ne 0 ]]; then
-        echo "You are not logged in to Azure. Please run 'az login' to log in."
-        exit 1
-    fi
+        az login --allow-no-subscriptions
 
-    echo "You must login to GitHub in order to create GitHub Codespace secrets"
-    gh auth login --scopes user,repo,codespace:secrets
-    echo -n "The repo the secret will be available in is $GITHUB_REPO.  Is this correct? [yYn]: "
-    read -r -n 1 answer
-    echo ""
-    if [[ ! $answer =~ ^[yY]?$ ]]; then
-       echo -n "Repo name in the form of owner/repo: " 
-       read -r GITHUB_REPO
     fi
     echo -n "Name of the service principal: "
     read -r -p "" sp_name
@@ -70,25 +81,22 @@ function create_azure_service_principal() {
         echo "  Tenant ID: $tenant_id"
         return 1
     fi
-
-    echo "Service Principal:"
-    echo "  App ID:    $app_id"
-    echo "  Password:  $password"
-    echo "  Tenant ID: $tenant_id"
-
     # we have non empty values -- store them in GH user secrets
-    gh secret set AZ_SP_APP_ID --user --repos "$GITHUB_REPO" --body "$app_id"
-    gh secret set AZ_SP_PASSWORD --user --repos "$GITHUB_REPO" --body "$password"
-    gh secret set AZ_SP_TENANT_ID --user --repos "$GITHUB_REPO" --body "$tenant_id"
+    SECRET_SAMPLE_AZ_SP_APP_ID="$app_id"
+    SECRET_SAMPLE_AZ_SP_PASSWORD="$password"
+    SECRET_SAMPLE_TENANT_ID="$tenant_id"
 
-    cat <<EOF
-Go back to VS Code. You should have a toast popup that says "Your Codespace secrets have changed."
-Click on "Reload to Apply" and you should be automatically logged into Azure. If not, go to the User Settings of your
-GitHub account and manually set the AZ_SP_APP_ID, AZ_SP_PASSWORD, AZ_SP_TENANT_ID secrets.
-EOF
-
+    export SECRET_SAMPLE_AZ_SP_APP_ID
+    export SECRET_SAMPLE_AZ_SP_PASSWORD
+    export SECRET_SAMPLE_TENANT_ID
+    return 0
 }
+# this script is called by onTerminalStart for each of the secrets, but we only want to generate the SP once
+# so check to environment variables and if they *all* not empty, just return. the onTerminalStart.sh script
+# will pick these up and set them in tha appropriate place.
+if [[ -n $SECRET_SAMPLE_AZ_SP_APP_ID && -n $SECRET_SAMPLE_AZ_SP_PASSWORD && -n $SECRET_SAMPLE_TENANT_ID ]]; then
+    return 0
+fi
 
-clear
-echo "Creating a Service Principal"
 create_azure_service_principal
+return $?

@@ -29,7 +29,7 @@ function echo_info() {
 # a this is a config file in json format where we use jq to find/store settings
 readonly REQUIRED_REPO_SECRETS="$PWD/.devcontainer/requiredRepoSecrets.json"
 readonly LOCAL_SECRETS_SET_FILE="$HOME/.localIndividualDevSecrets.sh"
-USE_CODESPACES_SECRETS=$(jq -r '.options.useGitHubUserSecrets' "$REQUIRED_REPO_SECRETS")
+USE_CODESPACES_SECRETS=$(jq -r '.options.useGitHubUserSecrets' "$REQUIRED_REPO_SECRETS" 2>/dev/null)
 
 # collect_secrets function
 #
@@ -61,9 +61,16 @@ function collect_secrets() {
         description=$(echo "$json_array" | jq -r ".[$i].description")
         shellscript=$(echo "$json_array" | jq -r ".[$i].shellscript")
 
+        # check to make sure that if shellscript is set that the file exists
+        if [[ -n "$shellscript" && ! -f "$shellscript" ]]; then
+            echo_error "ERROR: $shellscript specified in $REQUIRED_REPO_SECRETS does not exist."
+            echo_error "$environmentVariable will not be set."
+            echo_error "Note:  \$PWD=$PWD"
+            continue
+        fi
         # Check if the environment variable is set in the local secrets file
         local secret_entry
-        secret_entry=$(grep "^$environmentVariable=" "$LOCAL_SECRETS_SET_FILE")
+        secret_entry=$(grep "^$environmentVariable=" "$LOCAL_SECRETS_SET_FILE" 2>/dev/null)
 
         if [[ -n "$secret_entry" ]]; then
             # Get the value from the secret_entry
@@ -90,7 +97,7 @@ function collect_secrets() {
 }
 
 # build_save_secrets_script function
-# this builds the script that is called by on_terminal_start.sh that sets the secrets
+# this builds the script that is called by update_secrets.sh that sets the secrets
 # $1 contains a JSON array
 
 function build_save_secrets_script() {
@@ -186,7 +193,7 @@ function save_in_codespaces() {
 #   1. check if the value is known, if not prompt the user for the value
 #   2. reconstruct and overwrite the $LOCAL_SECRETS_SET_FILE
 #   3. source the $LOCAL_SECRETS_SET_FILE
-function on_terminal_start {
+function update_secrets {
 
     # check the last modified date of the env file file and if it is gt the last modified time of the config file
     # we have no work to do
@@ -198,6 +205,12 @@ function on_terminal_start {
         # shellcheck disable=1090
         source "$LOCAL_SECRETS_SET_FILE"
         return 0
+    fi
+
+    # we require GitHub login if GitHub secrets are being used. there might be other reasons outside the pervue of this
+    # this script to login to GitHub..
+    if [[ $USE_CODESPACES_SECRETS == "true" ]]; then
+        login_to_github
     fi
 
     # load the secrets file to get the array of secrets
@@ -220,9 +233,8 @@ function on_terminal_start {
 
 }
 
-# see if the user is logged into GitHub and if not, log them in. this scenario has us logging into both
-# GitHub and Gitlab.  If either one is optional, this is where you'd check the localStartupOptions.json
-# and ask the user if they wanted to login to GitHub.
+# see if the user is logged into GitHub with the scopes necessary to use Codespaces secrets.
+#  not, log them in.
 function login_to_github() {
 
     export GH_AUTH_STATUS
@@ -269,9 +281,54 @@ function login_to_github() {
     fi
 }
 
-# we require GitHub login if GitHub secrets are being used. there might be other reasons outside the pervue of this
-# this script to login to GitHub...
-if [[ $USE_CODESPACES_SECRETS == "true" ]]; then
-    login_to_github
-fi
-on_terminal_start
+function initial_setup() {
+    # Define the startup line to be added to the .bashrc
+    STARTUP_LINE="source $PWD/.devcontainer/devsecrets.sh update"
+
+    # Check if the startup line exists in the .bashrc file
+    if ! grep -q "${STARTUP_LINE}" "$HOME"/.bashrc; then
+        # If it doesn't exist, append the line to the .bashrc file
+        echo "${STARTUP_LINE}" >>"$HOME"/.bashrc
+    fi
+    # if there isn't a json file, create a default one
+    if [[ ! -f $REQUIRED_REPO_SECRETS ]]; then
+        echo '{
+    "options": {
+        "useGitHubUserSecrets": false
+    },
+    "secrets": []
+}' >"$REQUIRED_REPO_SECRETS"
+    fi
+}
+
+function show_help() {
+    echo "Usage: devsecrets.sh [OPTIONS]"
+    echo ""
+    echo "OPTIONS:"
+    echo "  help        Show this help message"
+    echo "  update      parses requiredRepoSecrets.json and updates $LOCAL_SECRETS_SET_FILE"
+    echo "  setup       modifies the devcontainer.json to boostrap the system"
+    echo "  reset       Resets $LOCAL_SECRETS_SET_FILE and runs update"
+    echo ""
+}
+# this is where code execution starts
+case "$1" in
+help)
+    show_help
+    ;;
+update)
+    update_secrets
+    ;;
+setup)
+    initial_setup
+    ;;
+reset)
+    rm "$LOCAL_SECRETS_SET_FILE" 2>/dev/null
+    update_secrets
+    # code for resetting the terminal goes here
+    ;;
+*)
+    echo "Invalid option: $1"
+    show_help
+    ;;
+esac

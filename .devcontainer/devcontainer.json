@@ -26,7 +26,7 @@
 	},
 
 
-	"postCreateCommand": "/bin/bash -i -c 'source ./.devcontainer/onPostCreate.sh'"
+	"postCreateCommand": "./.devcontainer/devsecrets.sh setup"
 
 
 }
