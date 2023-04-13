@@ -107,7 +107,7 @@ The way this works is the VS Code created file *.devcontainer/devcontainer.json*
  **devscrets.sh** takes the following parameters:
 ```shell
   help        Show this help message
-  update      parses requiredRepoSecrets.json and updates $HOME/localIndividualDevSecrets.sh
+  update      parses required-secrets.json and updates $HOME/localIndividualDevSecrets.sh
   setup       modifies the devcontainer.json to bootstrap the system
   reset       Resets $HOME/.localIndividualDevSecrets.sh and runs update
 ```
