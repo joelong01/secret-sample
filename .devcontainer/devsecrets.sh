@@ -10,11 +10,6 @@ NORMAL=$(tput sgr0)
 GREEN=$(tput setaf 2)
 YELLOW=$(tput setaf 3)
 
-readonly RED
-readonly NORMAL
-readonly GREEN
-readonly YELLOW
-
 # Functions to echo information in red/yellow/green
 function echo_error() {
     printf "${RED}%s${NORMAL}\n" "${*}"
@@ -25,10 +20,30 @@ function echo_warning() {
 function echo_info() {
     printf "${GREEN}%s${NORMAL}\n" "${*}"
 }
+#
+#   it is an easy mistake to run ./devsecrets.sh setup from the devcontainer directory instead of the project
+#   directory.  to make this work, we have to get the real paths to the required-secrets.json and the actual
+#   script itself
+function get_real_path() {
+    local file
+    file=$1
+    if [[ -f $file ]]; then
+        realpath "$file"
+        return 0
+    fi
+
+    file=".devcontainer/$file"
+    if [[ -f $file ]]; then
+        realpath "$file"
+        return 0
+    fi
+    echo_error "can't find $file. Run $0 from the project root directory"
+    exit 1
+}
 
 # a this is a config file in json format where we use jq to find/store settings
-readonly REQUIRED_REPO_SECRETS="$PWD/.devcontainer/required-secrets.json"
-readonly LOCAL_SECRETS_SET_FILE="$HOME/.localIndividualDevSecrets.sh"
+REQUIRED_REPO_SECRETS=$(get_real_path "required-secrets.json")
+LOCAL_SECRETS_SET_FILE="$HOME/.localIndividualDevSecrets.sh"
 USE_CODESPACES_SECRETS=$(jq -r '.options.useGitHubUserSecrets' "$REQUIRED_REPO_SECRETS" 2>/dev/null)
 
 # collect_secrets function
@@ -70,8 +85,8 @@ function collect_secrets() {
         fi
         # Check if the environment variable is set in the local secrets file
         local secret_entry
-        secret_entry=$(grep "^$environmentVariable=" "$LOCAL_SECRETS_SET_FILE" | 
-                        sed 's/^.*=\(.*\)$/\1/; s/\\\([^"]\|$\)/\1/g; s/^"\(.*\)"$/\1/' 2>/dev/null)
+        secret_entry=$(grep "^$environmentVariable=" "$LOCAL_SECRETS_SET_FILE" 2>/dev/null |
+            sed 's/^.*=\(.*\)$/\1/; s/\\\([^"]\|$\)/\1/g; s/^"\(.*\)"$/\1/' 2>/dev/null)
 
         if [[ -n "$secret_entry" ]]; then
             # Get the value from the secret_entry
@@ -119,7 +134,9 @@ fi
     # Iterate through the array
     for ((i = 0; i < length; i++)); do
         environmentVariable=$(echo "$json_array" | jq -r ".[$i].environmentVariable")
-        val="${!environmentVariable}"
+        # using eval as zsh would sometimes give "bad substitution when using parameter expansion
+        eval val="\$$environmentVariable"
+        val="${val//\"/\\\"}" # this escapes any quotes
         description=$(echo "$json_array" | jq -r ".[$i].description")
         toWrite+="# $description\nexport $environmentVariable\n$environmentVariable=\"$val\"\n"
     done
@@ -281,20 +298,25 @@ function login_to_github() {
         echo_info "$GITHUB_INFO"
     fi
 }
-
+#
+#   gets the fully qualified path to devsecrets.sh and adds a line to the .bashrc or .zshrc to run
+#   devscrets.sh update.  Also creates an empty required-secrets.json file
 function initial_setup() {
     # Define the startup line to be added to the .bashrc
-    STARTUP_LINE="source $PWD/.devcontainer/devsecrets.sh update"
+    local startup_line
+    local this_script
+    this_script=$(get_real_path devsecrets.sh)
 
+    startup_line="source $this_script update"
     # Check if the startup line exists in the .bashrc file
-    if ! grep -q "${STARTUP_LINE}" "$HOME"/.bashrc; then
+    if ! grep -q "${startup_line}" "$HOME"/.bashrc; then
         # If it doesn't exist, append the line to the .bashrc file
-        echo "${STARTUP_LINE}" >>"$HOME"/.bashrc
+        echo "${startup_line}" >>"$HOME"/.bashrc
     fi
     # Check if the startup line exists in the .zshrc file
-    if ! grep -q "${STARTUP_LINE}" "$HOME"/.zshrc; then
+    if ! grep -q "${startup_line}" "$HOME"/.zshrc; then
         # If it doesn't exist, append the line to the .bashrc file
-        echo "${STARTUP_LINE}" >>"$HOME"/.zshrc
+        echo "${startup_line}" >>"$HOME"/.zshrc
     fi
 
     # if there isn't a json file, create a default one
