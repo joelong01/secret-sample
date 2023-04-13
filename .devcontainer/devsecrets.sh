@@ -5,11 +5,18 @@
 # 3. Login to Azure, optionally with a service principal
 # 4. Setup the secrets
 
-RED=$(tput setaf 1)
-NORMAL=$(tput sgr0)
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-
+# this protects the readonly variables from trying to be set again -- this would happen if the 
+# dev runs ./devsecrets.sh reset
+if [[ -z "$NORMAL" ]]; then
+    readonly RED
+    readonly NORMAL
+    readonly GREEN
+    readonly YELLOW
+    RED=$(tput setaf 1)
+    NORMAL=$(tput sgr0)
+    GREEN=$(tput setaf 2)
+    YELLOW=$(tput setaf 3)
+fi
 # Functions to echo information in red/yellow/green
 function echo_error() {
     printf "${RED}%s${NORMAL}\n" "${*}"
@@ -43,7 +50,11 @@ function get_real_path() {
 
 # a this is a config file in json format where we use jq to find/store settings
 REQUIRED_REPO_SECRETS=$(get_real_path "required-secrets.json")
-LOCAL_SECRETS_SET_FILE="$HOME/.localIndividualDevSecrets.sh"
+
+if [[ -z "$LOCAL_SECRETS_SET_FILE" ]]; then
+    readonly LOCAL_SECRETS_SET_FILE
+    LOCAL_SECRETS_SET_FILE="$HOME/.localIndividualDevSecrets.sh"
+fi
 USE_CODESPACES_SECRETS=$(jq -r '.options.useGitHubUserSecrets' "$REQUIRED_REPO_SECRETS" 2>/dev/null)
 
 # collect_secrets function
